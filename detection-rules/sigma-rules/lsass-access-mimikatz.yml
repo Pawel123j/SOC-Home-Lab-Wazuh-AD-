@@ -1,0 +1,41 @@
+title: Suspicious LSASS Memory Access (Mimikatz-like)
+id: 7d4f9a02-1e3c-4f6b-9c1a-2a8d9e7b6c4f
+status: experimental
+description: |
+  Detects suspicious process access to lsass.exe with GrantedAccess masks
+  commonly used by credential dumpers (Mimikatz, ProcDump, comsvcs.dll).
+  These access masks include PROCESS_VM_READ which is required to read
+  memory contents — necessary to extract NTLM hashes / Kerberos tickets.
+author: soc-home-lab
+date: 2026/01/15
+references:
+  - https://attack.mitre.org/techniques/T1003/001/
+  - https://github.com/SwiftOnSecurity/sysmon-config
+  - https://blueteamops.medium.com/detecting-lsass-dumping-techniques-7665d65bd5dd
+tags:
+  - attack.credential_access
+  - attack.t1003.001
+logsource:
+  product: windows
+  category: process_access
+detection:
+  selection:
+    TargetImage|endswith: '\lsass.exe'
+    GrantedAccess:
+      - '0x1010'
+      - '0x1410'
+      - '0x1438'
+      - '0x143a'
+      - '0x1fffff'
+  filter_legit:
+    SourceImage|endswith:
+      - '\MsMpEng.exe'              # Defender
+      - '\MsSense.exe'               # Defender for Endpoint
+      - '\CSFalconService.exe'       # CrowdStrike
+      - '\TaniumClient.exe'          # Tanium
+      - '\wazuh-agent.exe'           # Wazuh agent
+  condition: selection and not filter_legit
+falsepositives:
+  - Legitimate EDR / antivirus engines (whitelisted via filter_legit)
+  - Some backup or system maintenance tools
+level: high

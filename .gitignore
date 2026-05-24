@@ -1,0 +1,53 @@
+# =============================================================================
+# .gitignore — soc-home-lab
+# =============================================================================
+
+# Vagrant — runtime state, prywatne klucze, locki
+.vagrant/
+*.box
+ubuntu-*.log
+
+# Ansible — pliki tymczasowe i retry
+*.retry
+.ansible/
+
+# Python — bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+
+# Docker — wolumeny lokalne, override compose'y
+docker-compose.override.yml
+
+# IDE / edytory
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS — śmieci systemowe
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logi i artefakty z laboratorium
+*.log
+logs/
+forensics/
+
+# Sekrety — NIGDY do repo
+*.pem
+*.key
+*.crt
+secrets/
+.env
+.env.local
+wazuh-passwords.txt
+
+# Screenshots (jeśli będziesz dodawał z prawdziwego labu)
+# Usuń tę linię gdy chcesz wrzucać screenshoty do docs/screenshots/
+# docs/screenshots/

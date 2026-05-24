@@ -1,0 +1,96 @@
+# =============================================================================
+# SOC Home Lab — Docker Quick Start
+# =============================================================================
+# Lekka wersja labu: SAM Wazuh manager w kontenerze, do walidacji reguł
+# detekcji bez konieczności stawiania całych VM-ów.
+#
+# CZEGO TO NIE ROBI:
+#   - Nie stawia Active Directory (Windows Server nie istnieje w Linux containerach)
+#   - Nie stawia Windows 10 ofiary (j.w.)
+#   - Nie ma Sysmona (driver kernel-mode, niedostępny w kontenerze)
+#   - Nie ma dashboardu (do tego użyj wariantu z indexer + dashboard, niżej)
+#
+# CO TO ROBI:
+#   - Uruchamia Wazuh manager 4.7 z naszymi custom rules zamontowanymi
+#   - Pozwala wykonać `wazuh-logtest` z syntetycznymi zdarzeniami Sysmon w JSON
+#   - Sprawdza, czy XML rules ładują się bez błędów (sam Wazuh, nie tylko parser)
+#   - Validuje regex PCRE2, mapowanie pól, łańcuchy if_sid
+#
+# URUCHOMIENIE:
+#   docker compose up -d
+#   docker exec -it wazuh-manager /var/ossec/bin/wazuh-logtest
+#   < wklej JSON zdarzenia ze stronicy test-events/ >
+#
+# CZYSZCZENIE:
+#   docker compose down -v
+# =============================================================================
+
+services:
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.5
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+
+    # Wazuh Indexer/Dashboard są tu opcjonalne — pełen stack w pliku
+    # docker-compose.full-stack.yml (do dopisania jeśli będzie potrzebny).
+    # Ten compose koncentruje się na walidacji reguł.
+
+    ports:
+      - "1514:1514"        # agenci (TLS)
+      - "1515:1515"        # enrollment
+      - "514:514/udp"      # syslog (do testów)
+      - "55000:55000"      # Wazuh API
+
+    volumes:
+      # Mount naszych custom rules — TO JEST POWÓD, DLA KTÓREGO STAWIAMY DOCKER
+      - ../../detection-rules/custom-wazuh-rules.xml:/wazuh-config-mount/etc/rules/local_rules.xml:ro
+
+      # Persisty (logi, kolejki, alerty) — przeżywają restart kontenera
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+
+    environment:
+      INDEXER_URL: ""              # bez indexer (lightweight mode)
+      INDEXER_USERNAME: ""
+      INDEXER_PASSWORD: ""
+      FILEBEAT_SSL_VERIFICATION_MODE: none
+      SSL_CERTIFICATE_AUTHORITIES: ""
+      SSL_CERTIFICATE: ""
+      SSL_KEY: ""
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: MyS3cr37P450r.*-Lab
+
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+    healthcheck:
+      test: ["CMD", "/var/ossec/bin/wazuh-control", "info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:

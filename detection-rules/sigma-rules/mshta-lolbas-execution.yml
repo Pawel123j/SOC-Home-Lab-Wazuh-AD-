@@ -1,0 +1,53 @@
+title: mshta.exe LOLBAS Execution
+id: 4c2f8d7e-5b1a-4f3c-9d8e-6a7b2c5f4e1d
+status: stable
+description: |
+  Detects abuse of mshta.exe (a signed Microsoft binary intended for
+  HTML Applications) as a proxy execution mechanism. Two flavours:
+    1. mshta running a remote .hta URL (drive-by / phishing)
+    2. mshta spawning a script interpreter (powershell/cmd/wscript)
+       as child process — classic post-exploitation chain.
+
+  mshta.exe has near-zero legitimate use in modern Windows enterprise
+  environments. In most orgs it can be safely blocked entirely
+  via AppLocker / WDAC.
+author: soc-home-lab
+date: 2026/01/15
+references:
+  - https://attack.mitre.org/techniques/T1218/005/
+  - https://lolbas-project.github.io/lolbas/Binaries/Mshta/
+tags:
+  - attack.defense_evasion
+  - attack.execution
+  - attack.t1218.005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  remote_hta:
+    Image|endswith: '\mshta.exe'
+    CommandLine|contains:
+      - 'http://'
+      - 'https://'
+      - 'ftp://'
+      - '//'
+  parent_chain:
+    ParentImage|endswith: '\mshta.exe'
+    Image|endswith:
+      - '\powershell.exe'
+      - '\powershell_ise.exe'
+      - '\cmd.exe'
+      - '\wscript.exe'
+      - '\cscript.exe'
+      - '\regsvr32.exe'
+      - '\rundll32.exe'
+  condition: remote_hta or parent_chain
+fields:
+  - User
+  - ParentImage
+  - Image
+  - CommandLine
+falsepositives:
+  - Legacy LOB applications still using HTA (rare in 2026)
+  - Some Citrix / Quest deployments (whitelist by hash)
+level: high

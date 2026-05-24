@@ -1,0 +1,72 @@
+# =============================================================================
+# Role: wazuh-agent-windows
+# Instaluje agenta Wazuh na hostach Windows i konfiguruje go.
+# =============================================================================
+
+- name: "Sprawdź, czy agent jest już zainstalowany"
+  ansible.windows.win_service_info:
+    name: WazuhSvc
+  register: wazuh_service
+  ignore_errors: true
+
+- name: "Pobierz MSI agenta Wazuh ({{ wazuh_agent_version }})"
+  ansible.windows.win_get_url:
+    url: "{{ wazuh_msi_url }}"
+    dest: 'C:\Windows\Temp\wazuh-agent.msi'
+    force: false
+  when: wazuh_service.services | length == 0
+
+- name: "Zainstaluj agenta z parametrami enrollment"
+  ansible.windows.win_package:
+    path: 'C:\Windows\Temp\wazuh-agent.msi'
+    arguments:
+      - "/q"
+      - "WAZUH_MANAGER={{ wazuh_manager_ip }}"
+      - "WAZUH_REGISTRATION_SERVER={{ wazuh_manager_ip }}"
+      - "WAZUH_AGENT_GROUP={{ agent_group | default('default') }}"
+      - "WAZUH_AGENT_NAME={{ inventory_hostname }}"
+    state: present
+  when: wazuh_service.services | length == 0
+  register: install_result
+
+- name: "Wyczyść pobrany MSI"
+  ansible.windows.win_file:
+    path: 'C:\Windows\Temp\wazuh-agent.msi'
+    state: absent
+  when: install_result is changed
+
+- name: "Włącz i uruchom usługę WazuhSvc"
+  ansible.windows.win_service:
+    name: WazuhSvc
+    start_mode: auto
+    state: started
+
+- name: "Dodaj dodatkowe lokalizacje logów do ossec.conf"
+  ansible.windows.win_lineinfile:
+    path: 'C:\Program Files (x86)\ossec-agent\ossec.conf'
+    insertbefore: '</ossec_config>'
+    line: |2
+        <localfile>
+          <location>Microsoft-Windows-Sysmon/Operational</location>
+          <log_format>eventchannel</log_format>
+        </localfile>
+        <localfile>
+          <location>Microsoft-Windows-PowerShell/Operational</location>
+          <log_format>eventchannel</log_format>
+        </localfile>
+    state: present
+    backup: true
+  notify: restart_wazuh_agent
+
+- name: "Sprawdź, czy agent komunikuje się z managerem"
+  ansible.windows.win_command: 'C:\Program Files (x86)\ossec-agent\agent-auth.exe -m {{ wazuh_manager_ip }}'
+  register: auth_result
+  changed_when: "'Valid key created' in auth_result.stdout"
+  failed_when: false
+
+# Handler:
+- name: "restart_wazuh_agent"
+  ansible.windows.win_service:
+    name: WazuhSvc
+    state: restarted
+  listen: restart_wazuh_agent

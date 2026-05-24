@@ -1,0 +1,17 @@
+# =============================================================================
+# Zmienne globalne dla wszystkich hostów w SOC Home Lab
+# =============================================================================
+
+# IP managera Wazuh — agenci się tu rejestrują i wysyłają logi
+wazuh_manager_ip: "192.168.10.10"
+wazuh_manager_port: 1514
+wazuh_registration_port: 1515
+
+# Wersja agenta — utrzymywać w parze z managerem
+wazuh_agent_version: "4.7.5"
+
+# URL do pakietu MSI dla Windows
+wazuh_msi_url: "https://packages.wazuh.com/4.x/windows/wazuh-agent-{{ wazuh_agent_version }}-1.msi"
+
+# URL do pakietu DEB dla Ubuntu
+wazuh_deb_url:  "https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_{{ wazuh_agent_version }}-1_amd64.deb"

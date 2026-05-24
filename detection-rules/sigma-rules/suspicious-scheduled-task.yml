@@ -1,0 +1,56 @@
+title: Suspicious Scheduled Task Creation
+id: 6e8a1b4d-3c5f-4a9b-8d2e-7c1f5e3b9a4d
+status: experimental
+description: |
+  Detects creation of scheduled tasks that are typical post-exploitation
+  persistence mechanisms. Filters on:
+    - schtasks.exe /create with /tr containing script interpreter
+      (powershell, cmd, mshta, rundll32, regsvr32, wmic)
+    - or task being created in suspicious paths (Temp, AppData, Public)
+    - or task running as SYSTEM with HTTP/HTTPS in command line
+
+  Sysmon EID 1 (process create) is preferred source; Windows
+  Security 4698 (Task Scheduler — task created) is the fallback.
+author: soc-home-lab
+date: 2026/01/15
+references:
+  - https://attack.mitre.org/techniques/T1053/005/
+  - https://thedfirreport.com/2022/02/21/qbot-and-zerologon-lead-to-full-domain-compromise/
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1053.005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection_schtasks:
+    Image|endswith: '\schtasks.exe'
+    CommandLine|contains: '/create'
+  suspicious_payload:
+    CommandLine|contains:
+      - 'powershell'
+      - 'cmd.exe /c'
+      - 'mshta'
+      - 'rundll32'
+      - 'regsvr32'
+      - 'wmic'
+      - 'bitsadmin'
+      - 'http://'
+      - 'https://'
+      - 'AppData\Local\Temp'
+      - 'C:\Users\Public'
+      - '\Windows\Temp\'
+  suspicious_run_as:
+    CommandLine|contains:
+      - '/ru SYSTEM'
+      - '/ru "NT AUTHORITY\SYSTEM"'
+  condition: selection_schtasks and (suspicious_payload or suspicious_run_as)
+fields:
+  - User
+  - ParentImage
+  - CommandLine
+falsepositives:
+  - Legitimate admin or deployment tasks (whitelist by source user / hash)
+  - Software installers occasionally create tasks under SYSTEM
+level: high

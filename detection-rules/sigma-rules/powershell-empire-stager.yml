@@ -1,0 +1,52 @@
+title: PowerShell Empire / Cobalt Strike Stager Pattern
+id: 9b5e3c41-7d2a-4e8f-b6c9-1f3a8b4d5e9c
+status: experimental
+description: |
+  Detects PowerShell command-line invocations that match the canonical
+  Empire / Cobalt Strike / PoshC2 stager pattern: hidden window,
+  no-profile, no-interactive, single-threaded apartment, with a long
+  base64-encoded command.
+
+  False positives possible for legitimate large encoded scripts
+  (vendor installers, MSI deployment), but the combination of all
+  three flags (-NoP -NonI -W Hidden) plus -Enc is unusual outside
+  of red-team tooling.
+author: soc-home-lab
+date: 2026/01/15
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+  - https://github.com/BC-SECURITY/Empire
+  - https://thedfirreport.com/category/threat-actor/
+tags:
+  - attack.execution
+  - attack.t1059.001
+  - attack.defense_evasion
+  - attack.t1027
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection_image:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\powershell_ise.exe'
+      - '\pwsh.exe'
+  selection_flags:
+    CommandLine|contains|all:
+      - '-NoP'
+      - '-W Hidden'
+    CommandLine|contains:
+      - '-Enc '
+      - '-EncodedCommand '
+      - '-e '
+  selection_b64_length:
+    CommandLine|re: '[A-Za-z0-9+/=]{200,}'
+  condition: selection_image and selection_flags and selection_b64_length
+fields:
+  - User
+  - ParentImage
+  - CommandLine
+falsepositives:
+  - Some vendor installers (rare)
+  - Citrix / VMware Horizon agent scripts (whitelist by ParentImage)
+level: high

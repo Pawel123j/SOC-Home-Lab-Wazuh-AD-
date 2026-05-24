@@ -1,0 +1,61 @@
+# =============================================================================
+# Główny playbook — wdrożenie agentów Wazuh na wszystkich hostach
+# Uruchomienie:  ansible-playbook -i inventory.yml site.yml
+# =============================================================================
+
+- name: "Weryfikacja Wazuh Manager"
+  hosts: wazuh_servers
+  gather_facts: false
+  tasks:
+    - name: "Sprawdź czy port 1514 nasłuchuje"
+      ansible.builtin.wait_for:
+        host: "{{ wazuh_manager_ip }}"
+        port: "{{ wazuh_manager_port }}"
+        timeout: 30
+      delegate_to: localhost
+
+    - name: "Sprawdź czy API managera odpowiada"
+      ansible.builtin.uri:
+        url: "https://{{ wazuh_manager_ip }}:55000/"
+        method: GET
+        validate_certs: false
+        status_code: [200, 401]   # 401 = wymaga auth — OK, port żyje
+      delegate_to: localhost
+
+- name: "Wdrożenie agenta Wazuh na hostach Windows"
+  hosts: windows_agents
+  gather_facts: true
+  roles:
+    - role: wazuh-agent-windows
+      tags: [agent, windows]
+
+- name: "Wdrożenie agenta Wazuh na hostach Linux"
+  hosts: linux_agents
+  gather_facts: true
+  roles:
+    - role: wazuh-agent-linux
+      tags: [agent, linux]
+
+- name: "Weryfikacja końcowa — wszyscy agenci są Active"
+  hosts: wazuh_servers
+  gather_facts: false
+  tasks:
+    - name: "Pobierz listę agentów z managera"
+      ansible.builtin.command: /var/ossec/bin/agent_control -l
+      become: true
+      register: agent_list
+      changed_when: false
+
+    - name: "Wyświetl status agentów"
+      ansible.builtin.debug:
+        var: agent_list.stdout_lines
+
+    - name: "Sprawdź czy DC01 i WS01 są aktywne"
+      ansible.builtin.assert:
+        that:
+          - "'dc01' in agent_list.stdout"
+          - "'ws01' in agent_list.stdout"
+          - agent_list.stdout is search('dc01.*Active')
+          - agent_list.stdout is search('ws01.*Active')
+        fail_msg: "Któryś z agentów nie jest Active — sprawdź połączenie."
+        success_msg: "Wszyscy agenci aktywni."

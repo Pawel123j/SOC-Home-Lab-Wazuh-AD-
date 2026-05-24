@@ -1,0 +1,398 @@
+<!--
+  ============================================================================
+  SOC Home Lab — Custom Wazuh Rules
+  Lokalizacja docelowa:  /var/ossec/etc/rules/local_rules.xml
+  Walidacja składni:     /var/ossec/bin/wazuh-logtest -t
+  Restart managera:      systemctl restart wazuh-manager
+  ============================================================================
+  Numeracja rule ID:
+      100100..100199  authentication / brute force        (T1110)
+      100200..100299  execution / credential access / C2  (T1003, T1059, T1071)
+      100220..100229  defense evasion / LOLBAS            (T1218)
+      100230..100239  exfiltration / collection           (T1041, T1560)
+      100240..100249  persistence                         (T1547)
+      100250..100259  discovery                           (T1018, T1087)
+      100290..100299  meta-alerty / korelacje
+  ============================================================================
+  Każda reguła zawiera mapowanie MITRE w tagu <mitre>, opis w <description>
+  i komentarz HTML wyjaśniający co i dlaczego.
+  Reguły powiązane z konkretnymi scenariuszami z docs/03-attack-scenarios.md.
+  ============================================================================
+  UWAGA: XML 1.0 nie pozwala na podwójny myślnik wewnątrz komentarzy,
+  dlatego separatory używają '=' zamiast '-'.
+  ============================================================================
+-->
+
+<group name="local,custom,soc-home-lab,">
+
+  <!--
+  ============================================================================
+  GRUPA 1: Authentication / Brute Force (T1110)
+  Powiazane scenariusze: 01 (SSH brute force)
+  ============================================================================
+  Wbudowane reguly Wazuh lapia wzorce na sshd_decoders.xml (rule.id 5710..5716).
+  Nadbudowujemy je o wlasna logike: swiadomosc segmentacji sieciowej.
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100110 = SSH brute force z segmentu VLAN 30 (atakujacego).
+  Wbudowana rule 5712 strzela dla 8 nieudanych prob w 120 s z dowolnego IP.
+  My zaostrzamy: 8 prob + zrodlo z 192.168.30.0/24 = atak z DMZ/internetu.
+  Decoder: sshd_decoders.xml -> pole 'srcip' wypelnione przez Wazuh.
+  -->
+  <rule id="100110" level="12" frequency="8" timeframe="120">
+    <if_matched_sid>5710</if_matched_sid>
+    <same_source_ip />
+    <srcip>192.168.30.0/24</srcip>
+    <description>SSH brute force from external segment (VLAN 30): 8 failed attempts in 120s from $(srcip)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failed,attack,pci_dss_10.2.4,pci_dss_10.2.5,gpg13_7.1,gdpr_IV_35.7.d,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,</group>
+  </rule>
+
+  <!--
+  Regula 100111 = Successful login po serii failures (anomalia "po brute-force").
+  Bardzo silny sygnal: jesli atakujacy w koncu odgadl haslo.
+  Pattern:
+    1. if_sid=5715 -> biezace zdarzenie to udane logowanie SSH
+    2. if_matched_sid=100110 -> w timeframe bylo wczesniej trafienie brute-force
+    3. same_source_ip -> to samo IP w obu zdarzeniach
+  WYMAGANE: frequency + timeframe dla if_matched_sid.
+  UWAGA: Wazuh wymaga frequency >= 2 dla if_matched_sid. Dla naszego scenariusza
+  (1 udane logowanie po brute force) ustawiamy 2 z dluzszym timeframe 600s,
+  bo brute-force z reguly konczy sie wieloma proba logowania.
+  -->
+  <rule id="100111" level="14" frequency="2" timeframe="600">
+    <if_sid>5715</if_sid>
+    <if_matched_sid>100110</if_matched_sid>
+    <same_source_ip />
+    <description>SSH successful login from $(srcip) preceded by brute force: likely compromised account</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,attack,</group>
+  </rule>
+
+  <!--
+  Regula 100120 = Brute force RDP/SMB na hostach Windows (EID 4625).
+  LogonType 3 = Network (SMB); LogonType 10 = RemoteInteractive (RDP).
+  Wbudowana Wazuh rule 60122 = pojedyncze "logon failure".
+  -->
+  <rule id="100120" level="11" frequency="10" timeframe="120">
+    <if_matched_sid>60122</if_matched_sid>
+    <field name="win.eventdata.logonType" type="pcre2">^(3|10)$</field>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <description>Windows brute force (RDP/SMB): 10 failed logons in 120s from $(win.eventdata.ipAddress) targeting $(win.eventdata.targetUserName)</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1021.001</id>
+    </mitre>
+    <group>authentication_failed,windows,attack,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 2: Credential Access = LSASS dumping (T1003.001)
+  Powiazany scenariusz: 02 (Mimikatz simulation)
+  ============================================================================
+  Sysmon EID 10 (ProcessAccess) jest jedynym praktycznym sposobem wykrycia
+  dostepu do pamieci procesu lsass. Klucz to GrantedAccess (maska uprawnien).
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100210 = Dostep do pamieci lsass.exe z podejrzana maska uprawnien.
+  Mimikatz i pochodne uzywaja jednej z masek:
+    0x1010   PROCESS_VM_READ | PROCESS_QUERY_INFORMATION
+    0x1410   PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION   (Win10+)
+    0x1438   ditto + PROCESS_DUP_HANDLE | THREAD_GET_CONTEXT
+    0x143a   wariant z THREAD_QUERY_LIMITED_INFORMATION
+    0x1fffff PROCESS_ALL_ACCESS = uzywane przez starsze Mimikatzy
+  Sysmon EID 10 -> Wazuh base rule 61609.
+  -->
+  <rule id="100210" level="14">
+    <if_sid>61609</if_sid>
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\\\lsass\.exe$</field>
+    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)0x(1010|1410|1438|143a|1fffff)</field>
+    <description>Possible LSASS memory access (Mimikatz-like): $(win.eventdata.sourceImage) accessed lsass.exe with GrantedAccess=$(win.eventdata.grantedAccess)</description>
+    <mitre>
+      <id>T1003.001</id>
+    </mitre>
+    <group>credential_access,sysmon,attack,</group>
+  </rule>
+
+  <!--
+  Regula 100211 = LSASS dump via comsvcs.dll (LOLBAS).
+  Pattern: rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump PID PATH full
+  Sysmon EID 1 = ProcessCreate -> Wazuh base rule 61603.
+  -->
+  <rule id="100211" level="13">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)rundll32.*comsvcs(\.dll)?.*MiniDump</field>
+    <description>LSASS dump via comsvcs.dll (LOLBAS): $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1003.001</id>
+      <id>T1218.011</id>
+    </mitre>
+    <group>credential_access,defense_evasion,sysmon,lolbas,attack,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 3: Execution = PowerShell (T1059.001) / Obfuscation (T1027)
+  Powiazany scenariusz: 03 (PowerShell Empire C2)
+  ============================================================================
+  PowerShell jest #1 jezykiem post-exploitation na Windows.
+  Lapiemy charakterystyczne wzorce: encoded commands, IEX+Download.
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100212 = PowerShell uruchomiony z -EncodedCommand i dlugim base64.
+  Legitne -Enc istnieje (np. wdrozenia oprogramowania), ale rzadko.
+  Prog dlugosci base64 (>200 znakow) odsiewa wiekszosc FP.
+  Grupa 'ps_c2_indicator' uzywana przez meta-regule 100299.
+  -->
+  <rule id="100212" level="11">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)-(Enc|EncodedCommand|e )\s+[A-Za-z0-9+/=]{200,}</field>
+    <description>Suspicious PowerShell with long EncodedCommand: possible payload obfuscation</description>
+    <mitre>
+      <id>T1059.001</id>
+      <id>T1027</id>
+    </mitre>
+    <group>execution,defense_evasion,powershell,sysmon,ps_c2_indicator,</group>
+  </rule>
+
+  <!--
+  Regula 100213 = PowerShell laczy sie z zewnetrznym IP (NetworkConnect, EID 3).
+  "Zewnetrzny" w tym labie = poza VLAN 20 (192.168.20.0/24) i poza loopback.
+  W produkcji warto uzyc CDB list (whitelist IP wewnetrznych).
+  Sysmon EID 3 -> Wazuh base rule 61605.
+  -->
+  <rule id="100213" level="10">
+    <if_sid>61605</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.destinationIp" type="pcre2">^(?!192\.168\.20\.|127\.|10\.|169\.254\.|192\.168\.10\.)</field>
+    <description>PowerShell network connection to non-internal IP $(win.eventdata.destinationIp):$(win.eventdata.destinationPort)</description>
+    <mitre>
+      <id>T1071.001</id>
+      <id>T1059.001</id>
+    </mitre>
+    <group>command_and_control,powershell,sysmon,ps_c2_indicator,</group>
+  </rule>
+
+  <!--
+  Regula 100214 = ScriptBlockLogging (EID 4104) zawiera klasyczny pattern downloadera.
+  IEX + DownloadString / DownloadData / Invoke-WebRequest to TOP-3 wzorzec
+  PowerShell stagerow (Empire, PoshC2, Sliver loader, Metasploit).
+  Wbudowane rule 91802 lapie EID 4104 -> my dodajemy filtr po tresci.
+  -->
+  <rule id="100214" level="12">
+    <if_sid>91802</if_sid>
+    <field name="win.eventdata.scriptBlockText" type="pcre2">(?i)(IEX|Invoke-Expression)[^;]*(DownloadString|DownloadData|Invoke-WebRequest|Net\.WebClient)</field>
+    <description>PowerShell ScriptBlock with IEX + Download pattern: likely staged payload execution</description>
+    <mitre>
+      <id>T1059.001</id>
+      <id>T1105</id>
+    </mitre>
+    <group>execution,defense_evasion,powershell,ps_c2_indicator,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 4: Defense Evasion = LOLBAS (T1218)
+  Powiazany scenariusz: 04 (mshta proxy execution)
+  ============================================================================
+  Living-off-the-Land Binaries: zaufane Microsoft binarki naduzywane do
+  uruchamiania zlosliwego kodu z ominieciem AppLocker/SRP.
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100220 = mshta.exe z URL w command line (zdalny HTA).
+  mshta nigdy nie powinien wykonywac kodu z internetu w normalnej firmie.
+  Wzorzec: mshta http://... lub mshta https://... lub mshta //...
+  -->
+  <rule id="100220" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\\\mshta\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?\s+(https?:|//|ftp:)</field>
+    <description>mshta.exe executing remote HTA file: $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1218.005</id>
+    </mitre>
+    <group>defense_evasion,execution,lolbas,sysmon,</group>
+  </rule>
+
+  <!--
+  Regula 100221 = mshta.exe jako rodzic dla interpretera (powershell/cmd/wscript).
+  Pattern niemozliwy do osiagniecia bez intencji ataku w 99% srodowisk.
+  Filtr: ParentImage = mshta.exe AND Image z {powershell, cmd, wscript, cscript}.
+  -->
+  <rule id="100221" level="13">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\\\mshta\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\\\(powershell(_ise)?|cmd|wscript|cscript)\.exe$</field>
+    <description>mshta.exe spawned script interpreter $(win.eventdata.image): classic LOLBAS chain</description>
+    <mitre>
+      <id>T1218.005</id>
+      <id>T1059</id>
+    </mitre>
+    <group>defense_evasion,execution,lolbas,sysmon,attack,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 5: Exfiltration (T1041) / Collection (T1560)
+  Powiazany scenariusz: 05 (data exfil HTTP POST)
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100230 = wiele polaczen wychodzacych z jednego procesu do jednego IP
+  spoza VLAN 20/10 w krotkim czasie. Klasyczna sygnatura "burst exfil".
+  Prog: 20 zdarzen w 300 s (5 min).
+  -->
+  <rule id="100230" level="10" frequency="20" timeframe="300">
+    <if_matched_sid>61605</if_matched_sid>
+    <same_field>win.eventdata.image</same_field>
+    <same_field>win.eventdata.destinationIp</same_field>
+    <field name="win.eventdata.destinationIp" type="pcre2">^(?!192\.168\.20\.|127\.|10\.|169\.254\.|192\.168\.10\.)</field>
+    <description>Possible data exfiltration: $(win.eventdata.image) made 20+ connections to $(win.eventdata.destinationIp) in 5 min</description>
+    <mitre>
+      <id>T1041</id>
+      <id>T1030</id>
+    </mitre>
+    <group>exfiltration,sysmon,attack,exfil_indicator,</group>
+  </rule>
+
+  <!--
+  Regula 100232 = utworzenie archiwum (zip/rar/7z) w katalogu Temp.
+  Sam fakt nie jest atakiem: to building-block (low level) uzywany
+  przez meta-regule 100231 (korelacja archive + outbound).
+  Sysmon EID 11 (FileCreate) -> Wazuh base rule 61613.
+  -->
+  <rule id="100232" level="6">
+    <if_sid>61613</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\\\(Temp|Windows\\Temp|Public|AppData\\Local\\Temp)\\\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
+    <description>Archive file created in temp folder: $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1560.001</id>
+    </mitre>
+    <group>collection,sysmon,exfil_indicator,</group>
+  </rule>
+
+  <!--
+  Regula 100231 = META: korelacja archive (100232) + burst outbound (100230).
+  Laczy dwa slabsze sygnaly w jeden silny alert.
+  Frequency=2 + if_matched_group=exfil_indicator wymaga 2 zdarzen z tej grupy
+  w 600 s od tego samego agenta.
+  -->
+  <rule id="100231" level="12" frequency="2" timeframe="600">
+    <if_matched_group>exfil_indicator</if_matched_group>
+    <same_field>agent.name</same_field>
+    <description>Suspicious archive creation followed by external connection on $(agent.name): possible data exfiltration</description>
+    <mitre>
+      <id>T1041</id>
+      <id>T1560.001</id>
+    </mitre>
+    <group>attack,exfiltration,correlation,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 6: Persistence (T1547)
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100240 = nowy wpis w kluczu Run (autostart).
+  Sysmon EID 13 (RegistryValueSet) -> Wazuh base rule 61615.
+  Filtrujemy po klasycznych kluczach Run i RunOnce (HKLM i HKCU).
+  -->
+  <rule id="100240" level="9">
+    <if_sid>61615</if_sid>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\\\Software\\\\(Wow6432Node\\\\)?Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(Once)?\\\\</field>
+    <description>Registry persistence: new value in Run key: $(win.eventdata.targetObject) = $(win.eventdata.details)</description>
+    <mitre>
+      <id>T1547.001</id>
+    </mitre>
+    <group>persistence,sysmon,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 7: Discovery (T1018, T1087)
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100250 = wykonanie typowych polecen reconu w PowerShell/cmd.
+  Lapie: net group "Domain Admins", whoami /groups, nltest /dclist, Get-ADUser, etc.
+  Sysmon EID 1 -> Wazuh base rule 61603.
+  -->
+  <rule id="100250" level="7">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(net\s+(group|user)\s+"?Domain Admins|nltest\s+/dclist|whoami\s+/groups|net\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net\s+session)</field>
+    <description>Suspicious discovery command: $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1087.002</id>
+      <id>T1018</id>
+      <id>T1069.002</id>
+    </mitre>
+    <group>discovery,sysmon,</group>
+  </rule>
+
+  <!--
+  ============================================================================
+  GRUPA 8: Meta-alerty / korelacje (najwyzsza wartosc detekcyjna)
+  ============================================================================
+  Lacza wiele slabszych sygnalow w jeden mocny alert.
+  W praktyce daja najwyzsza precision (najnizszy FP rate).
+  ============================================================================
+  -->
+
+  <!--
+  Regula 100299 = Meta: PowerShell C2 chain.
+  Strzela, gdy 3 zdarzenia z grupy 'ps_c2_indicator' (czyli z regul
+  100212/100213/100214) wystapia na tym samym agencie w 60 s.
+  W praktyce ten prog jest osiagany przez beacon stagera Empire/Cobalt.
+  -->
+  <rule id="100299" level="14" frequency="3" timeframe="60">
+    <if_matched_group>ps_c2_indicator</if_matched_group>
+    <same_field>agent.name</same_field>
+    <description>Multi-stage PowerShell C2 detected on $(agent.name): 3+ indicators (encoded / IEX-Download / external conn) within 60s</description>
+    <mitre>
+      <id>T1059.001</id>
+      <id>T1071.001</id>
+      <id>T1027</id>
+    </mitre>
+    <group>attack,powershell,correlation,</group>
+  </rule>
+
+  <!--
+  Regula 100297 = Meta: kompromitacja konta.
+  Fires when rule 100250 (recon command) appears after rule 100110
+  has already fired for the same source: sygnal, ze atakujacy zdobyl shell.
+  WYMAGANE: frequency + timeframe dla if_matched_sid (Wazuh wymaga >= 2).
+  Frequency=2: 2+ komendy reconu po brute-force = wysokie prawdopodobienstwo TP
+  (atakujacy zwykle wykonuje wiele komend: whoami, net group, nltest, etc.).
+  Timeframe 1800 s = 30 min.
+  -->
+  <rule id="100297" level="13" frequency="2" timeframe="1800">
+    <if_sid>100250</if_sid>
+    <if_matched_sid>100110</if_matched_sid>
+    <description>Likely account compromise on $(agent.name): brute force followed by recon activity</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1087.002</id>
+    </mitre>
+    <group>attack,correlation,</group>
+  </rule>
+
+</group>

@@ -1,0 +1,196 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# SOC Home Lab — Vagrantfile
+# ---------------------------------------------------------------------------
+# Stawia 4 maszyny wirtualne:
+#   - wazuh-srv  (Ubuntu 22.04)       192.168.10.10   — SIEM
+#   - dc01       (Windows Server 2019) 192.168.20.10   — Active Directory DC
+#   - ws01       (Windows 10)          192.168.20.20   — stacja robocza ofiary
+#   - kali       (Kali Linux rolling)  192.168.30.30   — atakujący
+#
+# Wymaga: Vagrant >= 2.4, VirtualBox >= 7.0 (lub VMware Workstation 17+).
+# Uruchomienie: `vagrant up`  (~25 min przy pierwszym pobraniu boxów)
+# ---------------------------------------------------------------------------
+
+Vagrant.configure("2") do |config|
+
+  # =========================================================================
+  # Globalne ustawienia (wspólne dla wszystkich VM)
+  # =========================================================================
+  # Ścieżka bezwzględna oparta o lokalizację samego Vagrantfile.
+  # __FILE__ = ścieżka do Vagrantfile niezależnie od katalogu, z którego wywołano `vagrant up`.
+  REPO_ROOT = File.expand_path("../..", __FILE__)
+
+  # Synced folder: cały root repo dostępny w guestach jako /vagrant_repo
+  # (na Windows guest auto-mapuje się do C:\vagrant_repo).
+  # Używamy domyślnego mechanizmu VirtualBox — działa na Win/Mac/Linux host
+  # bez konieczności instalacji rsync/nfs/cifs po stronie hosta.
+  # WYMAGA: VBoxGuestAdditions zainstalowane w guestach (oficjalne boxy je mają).
+  config.vm.synced_folder REPO_ROOT, "/vagrant_repo"
+
+  # Wyłącz domyślne shared folder z katalogu Vagrantfile (oszczędność I/O — nic tu nie wymieniamy).
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # =========================================================================
+  # 1. WAZUH SERVER (Ubuntu 22.04)
+  # =========================================================================
+  config.vm.define "wazuh-srv" do |srv|
+    srv.vm.box      = "ubuntu/jammy64"
+    srv.vm.hostname = "wazuh-srv"
+
+    # Sieć: VLAN 10 (mgmt)
+    srv.vm.network "private_network",
+                   ip: "192.168.10.10",
+                   virtualbox__intnet: "vlan10"
+
+    srv.vm.provider "virtualbox" do |vb|
+      vb.name   = "wazuh-srv"
+      vb.memory = 6144
+      vb.cpus   = 4
+      vb.customize ["modifyvm", :id, "--ioapic",          "on"]
+      vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      vb.customize ["modifyvm", :id, "--audio",           "none"]
+    end
+
+    # Bootstrap: paczki + Wazuh installer (all-in-one)
+    srv.vm.provision "shell", inline: <<-SHELL
+      set -euo pipefail
+
+      echo "[+] Wazuh server bootstrap — start"
+      export DEBIAN_FRONTEND=noninteractive
+
+      apt-get update -qq
+      apt-get install -y -qq curl gnupg2 apt-transport-https ca-certificates jq net-tools
+      timedatectl set-timezone Europe/Warsaw
+
+      if ! command -v /var/ossec/bin/wazuh-control >/dev/null 2>&1; then
+        echo "[+] Pobieram installer Wazuh 4.7..."
+        cd /root
+        curl -sO https://packages.wazuh.com/4.7/wazuh-install.sh
+        chmod +x wazuh-install.sh
+
+        echo "[+] Uruchamiam installer all-in-one (to potrwa ~15 min)..."
+        bash wazuh-install.sh -a -o > /var/log/wazuh-install.log 2>&1 || {
+          echo "[!] Installer failed — sprawdź /var/log/wazuh-install.log"
+          tail -50 /var/log/wazuh-install.log
+          exit 1
+        }
+        echo "[+] Wazuh zainstalowany. Hasła w /etc/wazuh-passwords.txt"
+      else
+        echo "[=] Wazuh już zainstalowany — pomijam."
+      fi
+
+      # Otwórz porty potrzebne dla agentów
+      ufw allow 1514/tcp comment "Wazuh agents" || true
+      ufw allow 1515/tcp comment "Wazuh enrollment" || true
+      ufw allow 55000/tcp comment "Wazuh API" || true
+      ufw allow 443/tcp comment "Wazuh dashboard" || true
+
+      echo "[+] Wazuh server gotowy. Dashboard: https://192.168.10.10"
+    SHELL
+
+    # Wgranie reguł custom z repo
+    srv.vm.provision "shell", inline: <<-SHELL
+      if [ -f /vagrant_repo/detection-rules/custom-wazuh-rules.xml ]; then
+        cp /vagrant_repo/detection-rules/custom-wazuh-rules.xml \
+           /var/ossec/etc/rules/local_rules.xml
+        chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml
+        chmod 660       /var/ossec/etc/rules/local_rules.xml
+        systemctl restart wazuh-manager
+        echo "[+] Custom rules deployed."
+      fi
+    SHELL
+  end
+
+  # =========================================================================
+  # 2. DOMAIN CONTROLLER (Windows Server 2019)
+  # =========================================================================
+  config.vm.define "dc01" do |dc|
+    dc.vm.box      = "gusztavvargadr/windows-server-2019-standard"
+    dc.vm.hostname = "dc01"
+    dc.vm.communicator = "winrm"
+    dc.winrm.timeout   = 1800
+    dc.vm.boot_timeout = 1800
+
+    # Sieć: VLAN 20 (LAN)
+    dc.vm.network "private_network",
+                  ip: "192.168.20.10",
+                  virtualbox__intnet: "vlan20"
+
+    dc.vm.provider "virtualbox" do |vb|
+      vb.name   = "dc01"
+      vb.memory = 3072
+      vb.cpus   = 2
+      vb.gui    = false
+      vb.customize ["modifyvm", :id, "--vram", "64"]
+    end
+
+    # Konfiguracja IP + DNS + promocja na DC
+    dc.vm.provision "shell", path: "provision/dc01-setup.ps1", privileged: true
+  end
+
+  # =========================================================================
+  # 3. WORKSTATION (Windows 10)
+  # =========================================================================
+  config.vm.define "ws01" do |ws|
+    ws.vm.box      = "gusztavvargadr/windows-10-enterprise"
+    ws.vm.hostname = "ws01"
+    ws.vm.communicator = "winrm"
+    ws.winrm.timeout   = 1800
+    ws.vm.boot_timeout = 1800
+
+    ws.vm.network "private_network",
+                  ip: "192.168.20.20",
+                  virtualbox__intnet: "vlan20"
+
+    ws.vm.provider "virtualbox" do |vb|
+      vb.name   = "ws01"
+      vb.memory = 3072
+      vb.cpus   = 2
+      vb.gui    = false
+    end
+
+    # Dołączenie do domeny + Sysmon + logging PowerShell
+    ws.vm.provision "shell", path: "provision/ws01-setup.ps1", privileged: true
+  end
+
+  # =========================================================================
+  # 4. KALI (atakujący)
+  # =========================================================================
+  config.vm.define "kali" do |kali|
+    kali.vm.box      = "kalilinux/rolling"
+    kali.vm.hostname = "kali"
+
+    kali.vm.network "private_network",
+                    ip: "192.168.30.30",
+                    virtualbox__intnet: "vlan30"
+
+    kali.vm.provider "virtualbox" do |vb|
+      vb.name   = "kali"
+      vb.memory = 3072
+      vb.cpus   = 2
+      vb.gui    = false
+    end
+
+    kali.vm.provision "shell", inline: <<-SHELL
+      set -euo pipefail
+      apt-get update -qq
+      apt-get install -y -qq hydra crackmapexec python3-pip git
+      pip3 install --break-system-packages impacket requests --quiet || true
+
+      # Wypakuj rockyou jeśli .gz
+      if [ -f /usr/share/wordlists/rockyou.txt.gz ]; then
+        gunzip -k /usr/share/wordlists/rockyou.txt.gz
+      fi
+
+      # Kopiuj skrypty ataków
+      mkdir -p /root/attacks
+      cp -r /vagrant_repo/attacks/* /root/attacks/ 2>/dev/null || true
+      chmod +x /root/attacks/*.sh 2>/dev/null || true
+
+      echo "[+] Kali gotowe. Skrypty w /root/attacks/"
+    SHELL
+  end
+
+end

@@ -1,0 +1,44 @@
+# =============================================================================
+# Ansible inventory dla SOC Home Lab
+# Uruchomienie:  ansible -i inventory.yml all -m ping
+# =============================================================================
+
+all:
+  children:
+
+    # -------------------------------------------------------------------------
+    # Wazuh manager — sam serwer SIEM (zazwyczaj nie wymaga playbook'a,
+    # bo postawiony przez Vagranta. Tutaj tylko dla weryfikacji łączności.)
+    # -------------------------------------------------------------------------
+    wazuh_servers:
+      hosts:
+        wazuh-srv:
+          ansible_host: 192.168.10.10
+          ansible_user: vagrant
+          ansible_ssh_private_key_file: ../vagrant/.vagrant/machines/wazuh-srv/virtualbox/private_key
+          ansible_python_interpreter: /usr/bin/python3
+
+    # -------------------------------------------------------------------------
+    # Agenci Linux (na razie pusty — przykład dla rozszerzenia)
+    # -------------------------------------------------------------------------
+    linux_agents:
+      hosts: {}
+
+    # -------------------------------------------------------------------------
+    # Agenci Windows — DC01 i WS01
+    # -------------------------------------------------------------------------
+    windows_agents:
+      hosts:
+        dc01:
+          ansible_host: 192.168.20.10
+          agent_group: domain_controllers
+        ws01:
+          ansible_host: 192.168.20.20
+          agent_group: workstations
+      vars:
+        ansible_user: vagrant
+        ansible_password: vagrant
+        ansible_connection: winrm
+        ansible_winrm_transport: basic
+        ansible_winrm_server_cert_validation: ignore
+        ansible_port: 5985
