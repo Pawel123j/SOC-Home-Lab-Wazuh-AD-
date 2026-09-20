@@ -39,6 +39,24 @@ python3 scripts/validate_detections.py
 *strzeli* na zdarzeniu. To wymaga kontenera z managerem — procedura w
 [`HUMAN_ACTION_REQUIRED.md`](HUMAN_ACTION_REQUIRED.md).
 
+## Detection catalogue
+
+Nine detection scenarios in [`docs/detections/`](docs/detections/) — one file per
+scenario, covering all 17 custom Wazuh rules. Each documents the attack technique,
+log source, detection logic, the rule itself, MITRE mapping, expected alert,
+**false positives and limitations**.
+
+The limitations are written honestly: rule `100297` correlates an SSH brute force
+with Windows reconnaissance commands without a shared key, so the two events can
+come from different hosts. That is documented as a known weakness with a proposed
+fix, not presented as working.
+
+> **On evidence:** no document in this repository reports alert counts or TP/FP
+> rates from an attack run. The lab needs three VMs and cannot run in CI. What CI
+> does verify on every push: rule syntax, unique IDs, `if_sid` chain integrity,
+> MITRE tag validity, and that the alert levels quoted in the documentation match
+> the rule definitions.
+
 ## Project Purpose
 
 This repository documents an end-to-end SOC home lab that I built to learn and demonstrate the day-to-day work of a Tier 1 / Tier 2 SOC Analyst. The goal was not to simply install a SIEM — it was to **build the full detection lifecycle**:
@@ -136,7 +154,8 @@ soc-home-lab/
 │   ├── 01-architecture.md               topology, IP plan, VLAN design
 │   ├── 02-installation.md               Wazuh manager + agent install guide (PL)
 │   ├── 03-attack-scenarios.md           5 scenarios × MITRE ATT&CK
-│   └── 04-detection-results.md          alert walkthrough with screenshots
+│   ├── 04-detection-results.md          expected alerts, derived from the rules
+│   └── detections/                      9 detection scenarios, one per file
 ├── infrastructure/
 │   ├── vagrant/Vagrantfile              3 VMs orchestrated as code
 │   └── ansible/                         playbooks for agent rollout
@@ -147,7 +166,7 @@ soc-home-lab/
 │   ├── 04-suspicious-process.ps1        T1218 — signed binary proxy exec
 │   └── 05-data-exfiltration.py          T1041 — exfil over C2
 ├── detection-rules/
-│   ├── custom-wazuh-rules.xml           12 custom rules with comments
+│   ├── custom-wazuh-rules.xml           17 custom rules with comments
 │   └── sigma-rules/                     4 portable Sigma rules
 └── reports/
     └── incident-report-template.md      IR write-up template

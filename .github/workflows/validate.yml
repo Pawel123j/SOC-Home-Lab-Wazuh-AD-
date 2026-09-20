@@ -35,6 +35,13 @@ jobs:
       - name: Walidacja treści detekcyjnych
         run: python3 scripts/validate_detections.py
 
+      # Dokumentacja opisująca detekcje rozjeżdża się z regułami po cichu:
+      # reguła dostaje inny próg, a zdanie w dokumencie zostaje stare. W repo
+      # o bezpieczeństwie to kosztuje wiarygodność całego zestawu reguł, więc
+      # zgodność jest pilnowana maszynowo, a nie pamięcią.
+      - name: Zgodność dokumentacji z regułami
+        run: python3 scripts/validate_docs_against_rules.py
+
   iac:
     name: Infrastruktura jako kod
     runs-on: ubuntu-latest
