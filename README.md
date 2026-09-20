@@ -5,9 +5,39 @@
 [![Wazuh](https://img.shields.io/badge/SIEM-Wazuh%204.7-blue)](https://wazuh.com/)
 [![MITRE](https://img.shields.io/badge/Framework-MITRE%20ATT%26CK-red)](https://attack.mitre.org/)
 [![Lab](https://img.shields.io/badge/Type-Home%20Lab-green)](#)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](#)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+[![Walidacja detekcji](https://github.com/Pawel123j/SOC-Home-Lab-Wazuh-AD-/actions/workflows/validate.yml/badge.svg)](https://github.com/Pawel123j/SOC-Home-Lab-Wazuh-AD-/actions/workflows/validate.yml)
 
 ---
+
+> ⚠️ **Skrypty w `attacks/` są ofensywne i służą wyłącznie do użytku w tym
+> laboratorium.** Symulują techniki MITRE ATT&CK (brute force, zrzut
+> poświadczeń, eksfiltracja) po to, żeby dało się sprawdzić, czy reguły
+> detekcyjne działają. Uruchamianie ich w jakiejkolwiek sieci, której nie
+> jesteś właścicielem lub na którą nie masz pisemnej zgody, jest nielegalne
+> w większości jurysdykcji. Lab działa w odizolowanych sieciach 192.168.x
+> i nie jest wystawiony na zewnątrz.
+
+## Weryfikacja w CI
+
+Repozytorium nie zawiera aplikacji do zbudowania — jego produktem są reguły
+detekcyjne i infrastruktura jako kod. Bramka CI sprawdza więc to, czego
+zepsucie realnie boli:
+
+| Sprawdzenie | Zakres |
+|---|---|
+| Reguły Wazuh | poprawność XML, unikalność ID, zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
+| Reguły Sigma | poprawność YAML i pola wymagane przez specyfikację |
+| Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha |
+| Ansible / compose | parsowanie YAML, składnia skryptów powłoki, `docker compose config` |
+
+```bash
+python3 scripts/validate_detections.py
+```
+
+**Czego CI nie robi:** nie uruchamia Wazuha, więc nie potwierdza, że reguła
+*strzeli* na zdarzeniu. To wymaga kontenera z managerem — procedura w
+[`HUMAN_ACTION_REQUIRED.md`](HUMAN_ACTION_REQUIRED.md).
 
 ## Project Purpose
 
