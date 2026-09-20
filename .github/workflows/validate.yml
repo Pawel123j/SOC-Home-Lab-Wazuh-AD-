@@ -1,0 +1,95 @@
+name: Walidacja detekcji
+
+# To repozytorium nie zawiera aplikacji do zbudowania — jego produktem są
+# reguły detekcyjne, infrastruktura jako kod i scenariusze ataków. Bramka
+# sprawdza więc to, czego zepsucie realnie boli: niepoprawną regułę, zerwany
+# łańcuch if_sid, zduplikowane ID albo syntetyczne zdarzenie, na którym żadna
+# reguła nie ma szans strzelić.
+#
+# Czego ta bramka NIE robi: nie uruchamia Wazuha, więc nie potwierdza, że
+# reguła faktycznie strzeli. Do tego służy kontener z managerem
+# (infrastructure/docker/) — patrz HUMAN_ACTION_REQUIRED.md.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  detections:
+    name: Reguły Wazuh, Sigma i zdarzenia testowe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalacja zależności
+        run: pip install "pyyaml>=6,<7"
+
+      - name: Walidacja treści detekcyjnych
+        run: python3 scripts/validate_detections.py
+
+  iac:
+    name: Infrastruktura jako kod
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalacja zależności
+        run: pip install "pyyaml>=6,<7"
+
+      # Literówka w playbooku Ansible albo w compose ujawnia się dziś dopiero
+      # po 25 minutach stawiania labu. Parsowanie kosztuje sekundę.
+      - name: Poprawność YAML (Ansible, compose)
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+
+          roots = ["infrastructure", ".github"]
+          failures = []
+          checked = 0
+
+          for root in roots:
+              for path in sorted(pathlib.Path(root).rglob("*.yml")) + sorted(pathlib.Path(root).rglob("*.yaml")):
+                  checked += 1
+                  try:
+                      # Ansible i compose potrafią mieć wiele dokumentów w pliku.
+                      list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+                  except yaml.YAMLError as exc:
+                      failures.append(f"{path}: {exc}")
+
+          print(f"Sprawdzono {checked} plików YAML")
+          for failure in failures:
+              print(f"  - {failure}", file=sys.stderr)
+          sys.exit(1 if failures else 0)
+          PY
+
+      - name: Poprawność składni skryptów powłoki
+        run: |
+          set -e
+          for script in $(git ls-files '*.sh'); do
+            bash -n "$script" && echo "OK $script"
+          done
+
+  compose:
+    name: Walidacja harnessu Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Harness z Wazuh managerem jest lekką alternatywą dla pełnego labu na
+      # VM-ach. Sprawdzamy, że plik compose jest poprawny — postawienie samego
+      # managera i odpalenie 9 zdarzeń opisuje HUMAN_ACTION_REQUIRED.md.
+      - name: docker compose config
+        working-directory: infrastructure/docker
+        run: docker compose config -q
