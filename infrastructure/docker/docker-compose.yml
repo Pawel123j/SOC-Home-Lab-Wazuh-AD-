@@ -68,6 +68,10 @@ services:
       SSL_CERTIFICATE: ""
       SSL_KEY: ""
       API_USERNAME: wazuh-wui
+      # Domyślne hasło API z dokumentacji Wazuha, świadomie zostawione: ten
+      # compose stawia manager lokalnie, wyłącznie do walidacji reguł. Port
+      # 55000 nie powinien być wystawiony poza localhost. Przy jakimkolwiek
+      # trwałym wdrożeniu podmień je na wartość z sekretów, a nie z pliku.
       API_PASSWORD: MyS3cr37P450r.*-Lab
 
     ulimits:

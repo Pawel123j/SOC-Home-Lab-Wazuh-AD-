@@ -36,6 +36,18 @@ all:
           ansible_host: 192.168.20.20
           agent_group: workstations
       vars:
+        # UWAGA — to NIE jest wyciek sekretu.
+        #
+        # `vagrant/vagrant` to publicznie znane, domyślne dane logowania obrazów
+        # bazowych Vagranta. Każdy, kto pobierze ten sam box, ma dokładnie te
+        # same. Trzymanie ich w repozytorium nie zmniejsza bezpieczeństwa —
+        # zmniejszyłoby je dopiero użycie tego inwentarza poza laboratorium.
+        #
+        # Lab działa w odizolowanych sieciach 192.168.x (patrz docs/01-architecture.md)
+        # i nie jest wystawiony na zewnątrz. Do czegokolwiek trwałego:
+        # zmień hasła po provisioningu, przełącz WinRM na HTTPS z walidacją
+        # certyfikatu i trzymaj poświadczenia w Ansible Vault
+        # (`ansible-vault encrypt_string`), a nie w inwentarzu.
         ansible_user: vagrant
         ansible_password: vagrant
         ansible_connection: winrm
