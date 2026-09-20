@@ -83,6 +83,15 @@ def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
                 f"a w XML {sorted(rule['mitre'])}"
             )
 
+    # Zapis prozą: `100210`, level 14 — używany w sekcjach „Oczekiwany alert".
+    for rule_id, level in re.findall(r"`(10\d{4})`[^\n]{0,40}?level (\d+)", text):
+        rule = rules.get(rule_id)
+        if rule and rule["level"] != level:
+            problems.append(
+                f"{name}: reguła {rule_id} opisana w tekście jako level {level}, "
+                f"a w XML ma level {rule['level']}"
+            )
+
     for pattern, label in FABRICATED_EVIDENCE:
         hits = len(re.findall(pattern, text))
         if hits:
