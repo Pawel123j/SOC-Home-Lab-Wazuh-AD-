@@ -238,8 +238,9 @@ reguły.
 | 100231 | Archiwum + ruch wychodzący | | | | |
 | 100232 | Archiwum w katalogu tymczasowym | | | | |
 | 100240 | Utrwalenie w kluczu `Run` | | | | |
+| 100241 | Utrwalenie przez zadanie zaplanowane | | | | |
 | 100250 | Polecenia rozpoznania | | | | |
-| 100297 | Korelacja: brute force + rozpoznanie | | | | |
+| 100297 | Korelacja: włamanie Windows + rozpoznanie na tym samym hoście | | | | |
 | 100299 | Korelacja: łańcuch PowerShell C2 | | | | |
 
 Zrzuty ekranu z dashboardu: instrukcja w

@@ -326,6 +326,41 @@
   </rule>
 
   <!--
+  Regula 100241 = utworzenie zadania zaplanowanego jako mechanizm trwalosci.
+  Sysmon EID 1 (process create) -> Wazuh base rule 61603.
+  Lapie schtasks.exe /create, gdy w linii komend jest interpreter skryptow,
+  pobieranie z sieci albo uruchomienie jako SYSTEM. Odpowiednik reguly Sigma
+  detection-rules/sigma-rules/suspicious-scheduled-task.yml (T1053.005).
+
+  Trzy warunki <field> laczy AND: (1) image konczy sie na schtasks.exe,
+  (2) linia komend zawiera /create, (3) linia komend zawiera podejrzany
+  payload. Bez warunku (3) regula strzelalaby na kazdym legalnym zadaniu.
+
+  Zrodlo Sysmon EID 1 zamiast Security 4698: 4698 wymaga wlaczonego audytu
+  "Object Access > Other Object Access Events", ktory domyslnie jest wylaczony,
+  a lab i tak zbiera Sysmon EID 1 dla pozostalych regul. 4698 jako fallback
+  jest opisany w regule Sigma.
+
+  Level 10: mocniejszy sygnal niz wpis w kluczu Run (100240, level 9), bo
+  filtr payloadu odsiewa wiekszosc legalnych zadan, ale nizej niz alerty
+  natychmiastowej eskalacji (LSASS, C2).
+
+  STATUS: NOT TESTED / REQUIRES LAB — poprawnosc XML i skladni pcre2 sprawdzona
+  statycznie; faktyczne wystrzelenie wymaga managera Wazuh.
+  -->
+  <rule id="100241" level="10">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\schtasks\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)/create\b</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd\.exe\s*/c|mshta|rundll32|regsvr32|wmic|bitsadmin|https?://|AppData\\Local\\Temp|C:\\Users\\Public|\\Windows\\Temp\\|/ru\s+"?(NT AUTHORITY\\)?SYSTEM)</field>
+    <description>Scheduled task persistence: $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1053.005</id>
+    </mitre>
+    <group>persistence,sysmon,</group>
+  </rule>
+
+  <!--
   ============================================================================
   GRUPA 7: Discovery (T1018, T1087)
   ============================================================================
@@ -376,18 +411,37 @@
   </rule>
 
   <!--
-  Regula 100297 = Meta: kompromitacja konta.
-  Fires when rule 100250 (recon command) appears after rule 100110
-  has already fired for the same source: sygnal, ze atakujacy zdobyl shell.
+  Regula 100297 = Meta: kompromitacja konta na hoscie Windows.
+  Strzela, gdy rozpoznanie (100250) nastapi po brute-force RDP/SMB (100120)
+  NA TYM SAMYM HOSCIE: atakujacy dostal sie na maszyne i zaczyna enumeracje AD.
+
+  Dlaczego lancuch zostal przebudowany (bylo: 100110 -> 100250, bez klucza):
+  100110 to brute-force SSH (Linux, korelacja po srcip), a 100250 to rozpoznanie
+  z Sysmona (Windows). Te zdarzenia nie maja ZADNEGO wspolnego pola, wiec regula
+  bez klucza korelacji laczyla brute-force SSH na jednym hoscie z whoami/net group
+  wykonanym na zupelnie innym — level 13 na dwoch niepowiazanych zdarzeniach
+  w tym samym oknie 30 min. Spojny lancuch trzyma sie jednego systemu:
+  Windows brute-force -> Windows recon.
+
+  Klucz korelacji: same_field agent.name (ta sama konwencja co 100299) — oba
+  zdarzenia musza pochodzic z tego samego agenta Wazuha, czyli z tego samego
+  hosta. To pole istnieje w kazdym zdarzeniu Wazuha niezaleznie od kanalu, wiec
+  dziala miedzy 4625 (Security) a Sysmon EID 1 (Operational).
+
   WYMAGANE: frequency + timeframe dla if_matched_sid (Wazuh wymaga >= 2).
-  Frequency=2: 2+ komendy reconu po brute-force = wysokie prawdopodobienstwo TP
+  Frequency=2: 2+ komendy reconu po wlamaniu = mniejsza szansa na FP
   (atakujacy zwykle wykonuje wiele komend: whoami, net group, nltest, etc.).
   Timeframe 1800 s = 30 min.
+
+  STATUS: NOT TESTED / REQUIRES LAB — spojnosc lancucha i pole korelacji
+  sprawdzone statycznie (validate_detections.py); faktyczne wystrzelenie wymaga
+  managera Wazuh (patrz HUMAN_ACTION_REQUIRED.md).
   -->
   <rule id="100297" level="13" frequency="2" timeframe="1800">
     <if_sid>100250</if_sid>
-    <if_matched_sid>100110</if_matched_sid>
-    <description>Likely account compromise on $(agent.name): brute force followed by recon activity</description>
+    <if_matched_sid>100120</if_matched_sid>
+    <same_field>agent.name</same_field>
+    <description>Likely account compromise on $(agent.name): Windows brute force followed by AD recon on the same host</description>
     <mitre>
       <id>T1110.001</id>
       <id>T1087.002</id>
