@@ -22,21 +22,19 @@ oczekiwany alert, fałszywe alarmy i ograniczenia.
 | [mshta.exe jako proxy wykonania (LOLBAS)](lolbas-mshta.md) | `100220`, `100221` | 12, 13 | `T1059`, `T1218.005` |
 | [Eksfiltracja danych przez HTTP](data-exfiltration-http.md) | `100232`, `100230`, `100231` | 6, 10, 12 | `T1030`, `T1041`, `T1560.001` |
 | [Utrwalenie przez klucz Run w rejestrze](persistence-registry-run.md) | `100240` | 9 | `T1547.001` |
+| [Utrwalenie przez zadanie zaplanowane](persistence-scheduled-task.md) | `100241` | 10 | `T1053.005` |
 | [Polecenia rozpoznania środowiska](discovery-commands.md) | `100250` | 7 | `T1018`, `T1069.002`, `T1087.002` |
-| [Korelacja: brute force poprzedzający rozpoznanie](account-compromise-correlation.md) | `100297` | 13 | `T1087.002`, `T1110.001` |
+| [Korelacja: włamanie Windows poprzedzające rozpoznanie](account-compromise-correlation.md) | `100297` | 13 | `T1087.002`, `T1110.001` |
 
-Scenariusze pokrywają **17 z 17** reguł własnych.
+Scenariusze pokrywają **18 z 18** reguł własnych.
 
 ## Reguły Sigma
 
 W [`detection-rules/sigma-rules/`](../../detection-rules/sigma-rules/) są cztery
-reguły w formacie Sigma, przenośnym między systemami SIEM. Trzy odpowiadają
-scenariuszom powyżej (`lsass-access-mimikatz`, `mshta-lolbas-execution`,
-`powershell-empire-stager`).
-
-Czwarta, `suspicious-scheduled-task.yml`, **nie ma odpowiednika w regułach
-Wazuha** — zadania zaplanowane jako technika utrwalenia nie są obecnie pokryte
-po stronie Wazuha. Pozycja w roadmapie poniżej.
+reguły w formacie Sigma, przenośnym między systemami SIEM. Każda ma teraz
+odpowiednik w regułach Wazuha: `lsass-access-mimikatz`, `mshta-lolbas-execution`,
+`powershell-empire-stager` oraz `suspicious-scheduled-task` (reguła `100241`,
+[persistence-scheduled-task.md](persistence-scheduled-task.md)).
 
 ## Roadmap detekcji
 
@@ -44,10 +42,8 @@ Techniki nieobsługiwane obecnym laboratorium, z powodem:
 
 | Technika | Czego brakuje |
 |---|---|
-| Utrwalenie przez zadania zaplanowane | Reguła Wazuha odpowiadająca istniejącej regule Sigma (Sysmon EID 1 + dziennik Task Scheduler) |
 | Password spraying | Odwrotne zliczanie: wiele kont z jednego źródła zamiast wielu prób na konto |
 | Eksfiltracja przez DNS | Zbieranie logów zapytań DNS i analiza entropii nazw |
 | Nadużycie Kerberosa (Kerberoasting) | Audyt EID 4769 na kontrolerze domeny |
 | Ruch boczny przez WMI / WinRM | Sysmon EID 19–21 oraz logi WinRM na hostach docelowych |
 | Zbieranie danych przez LDAP (BloodHound) | Logowanie zapytań LDAP na kontrolerze domeny |
-| Poprawa korelacji `100297` | Wspólny klucz korelacji (konto) między światem SSH a Windows |

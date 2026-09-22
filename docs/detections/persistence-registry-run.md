@@ -54,9 +54,8 @@ się utrwalił". Jako samodzielny alert nadaje się głównie do przeglądu okre
 ## Ograniczenia
 
 `Run`/`RunOnce` to jedna z kilkudziesięciu technik utrwalenia. Reguła nie obejmuje
-zadań zaplanowanych, usług, WMI ani folderu Autostart. Zadania zaplanowane są
-pokryte regułą Sigma `suspicious-scheduled-task.yml`, ale **nie mają odpowiednika
-w regułach Wazuha** — patrz roadmapa.
+usług, WMI ani folderu Autostart. Zadania zaplanowane mają osobną regułę
+`100241` ([persistence-scheduled-task.md](persistence-scheduled-task.md)).
 
 ## Walidacja
 
