@@ -30,10 +30,13 @@ jobs:
           python-version: "3.12"
 
       - name: Instalacja zależności
-        run: pip install "pyyaml>=6,<7"
+        run: pip install -r requirements-test.txt
 
       - name: Walidacja treści detekcyjnych
         run: python3 scripts/validate_detections.py
+
+      - name: PCRE2 na realistycznych polach i próbkach negatywnych
+        run: python3 -m pytest -q tests
 
       # Dokumentacja opisująca detekcje rozjeżdża się z regułami po cichu:
       # reguła dostaje inny próg, a zdanie w dokumencie zostaje stare. W repo
@@ -100,3 +103,5 @@ jobs:
       - name: docker compose config
         working-directory: infrastructure/docker
         run: docker compose config -q
+        env:
+          WAZUH_API_PASSWORD: ci-config-validation-only-not-a-runtime-password

@@ -37,10 +37,10 @@ services:
     # Ten compose koncentruje się na walidacji reguł.
 
     ports:
-      - "1514:1514"        # agenci (TLS)
-      - "1515:1515"        # enrollment
-      - "514:514/udp"      # syslog (do testów)
-      - "55000:55000"      # Wazuh API
+      - "127.0.0.1:1514:1514"        # agenci (TLS)
+      - "127.0.0.1:1515:1515"        # enrollment
+      - "127.0.0.1:514:514/udp"      # syslog (do testów)
+      - "127.0.0.1:55000:55000"      # Wazuh API
 
     volumes:
       # Mount naszych custom rules — TO JEST POWÓD, DLA KTÓREGO STAWIAMY DOCKER
@@ -63,16 +63,13 @@ services:
       INDEXER_URL: ""              # bez indexer (lightweight mode)
       INDEXER_USERNAME: ""
       INDEXER_PASSWORD: ""
-      FILEBEAT_SSL_VERIFICATION_MODE: none
+      FILEBEAT_SSL_VERIFICATION_MODE: full
       SSL_CERTIFICATE_AUTHORITIES: ""
       SSL_CERTIFICATE: ""
       SSL_KEY: ""
       API_USERNAME: wazuh-wui
-      # Domyślne hasło API z dokumentacji Wazuha, świadomie zostawione: ten
-      # compose stawia manager lokalnie, wyłącznie do walidacji reguł. Port
-      # 55000 nie powinien być wystawiony poza localhost. Przy jakimkolwiek
-      # trwałym wdrożeniu podmień je na wartość z sekretów, a nie z pliku.
-      API_PASSWORD: MyS3cr37P450r.*-Lab
+      # Wartość pochodzi z lokalnego środowiska/sekretów, nigdy z kodu.
+      API_PASSWORD: ${WAZUH_API_PASSWORD:?set a private API password for this isolated lab}
 
     ulimits:
       memlock:

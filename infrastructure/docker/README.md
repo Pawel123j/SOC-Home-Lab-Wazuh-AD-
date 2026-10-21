@@ -1,5 +1,32 @@
 # Docker Quick Start — walidacja reguł Wazuh
 
+**Stan ETAPU 3 (2026-10-20): PARTIAL.** Sprawdzono 13 testów PCRE2, strukturę
+18 reguł Wazuh, 4 Sigma, 10 fixtures i zgodność 16 dokumentów. Testy wykryły
+nadmiarowe escapowanie separatorów Windows, pominięcie `-e` i kolejności
+download → IEX; wzorce i fixtures poprawiono. PCRE2 nie potwierdza dekoderów,
+korelacji ani dostarczenia alertów przez Wazuh.
+
+Przed Compose ustaw własny `WAZUH_API_PASSWORD` przez środowisko lub prywatny
+plik `.env`. Wszystkie publikowane porty są teraz ograniczone do 127.0.0.1;
+domyślne hasło w kodzie usunięto. Nie wyłączaj weryfikacji TLS przy dołączaniu
+indexera. Przypięty manager 4.7.5 wymaga osobnej oceny/aktualizacji obrazu —
+audyt zależności Pythona nie jest audytem Wazuh.
+
+Po uruchomieniu **własnego izolowanego** managera z bieżącymi regułami:
+
+```sh
+python scripts/run_wazuh_fixtures.py --container TWOJ_KONTENER --output /nowy/raport.json
+```
+
+Polecenie uruchamiaj z katalogu głównego repozytorium. Sprawdza 10 pozytywnych
+i 10 negatywnych przypadków poprzez rzeczywisty `wazuh-logtest`, zapisuje pełny
+wynik oraz FN/FP i zwraca błąd przy niezgodności. **Nie uruchomiono go w tym
+środowisku**: obraz wymaga kilku GB, na dysku roboczym pozostało poniżej 1 GB.
+Nie zmierzono tu FN/FP managera. Windows/AD i Sysmon są niedostępne; integracja
+z nimi pozostaje **BLOCKED**. Na wspieranej maszynie powtórz test po restarcie
+własnego managera, a korelacje i odbiór alertów zweryfikuj osobno w labie AD.
+Zachowaj poprzednie raporty i wolumeny; nie wykonuj `down -v` na istniejących danych.
+
 Lekka alternatywa dla pełnego labu Vagrant. **Stawia tylko Wazuh manager** w kontenerze, do walidacji reguł detekcji bez konieczności pełnej infrastruktury (4 VM, AD, Sysmon).
 
 ---

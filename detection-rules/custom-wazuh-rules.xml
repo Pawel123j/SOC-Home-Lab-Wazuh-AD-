@@ -115,8 +115,8 @@
   -->
   <rule id="100210" level="14">
     <if_sid>61609</if_sid>
-    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\\\lsass\.exe$</field>
-    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)0x(1010|1410|1438|143a|1fffff)</field>
+    <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
+    <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1010|1410|1438|143a|1fffff)$</field>
     <description>Possible LSASS memory access (Mimikatz-like): $(win.eventdata.sourceImage) accessed lsass.exe with GrantedAccess=$(win.eventdata.grantedAccess)</description>
     <mitre>
       <id>T1003.001</id>
@@ -158,8 +158,8 @@
   -->
   <rule id="100212" level="11">
     <if_sid>61603</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)-(Enc|EncodedCommand|e )\s+[A-Za-z0-9+/=]{200,}</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)-(Enc(?:odedCommand)?|e)\s+[A-Za-z0-9+/=]{200,}</field>
     <description>Suspicious PowerShell with long EncodedCommand: possible payload obfuscation</description>
     <mitre>
       <id>T1059.001</id>
@@ -176,7 +176,7 @@
   -->
   <rule id="100213" level="10">
     <if_sid>61605</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
     <field name="win.eventdata.destinationIp" type="pcre2">^(?!192\.168\.20\.|127\.|10\.|169\.254\.|192\.168\.10\.)</field>
     <description>PowerShell network connection to non-internal IP $(win.eventdata.destinationIp):$(win.eventdata.destinationPort)</description>
     <mitre>
@@ -194,7 +194,7 @@
   -->
   <rule id="100214" level="12">
     <if_sid>91802</if_sid>
-    <field name="win.eventdata.scriptBlockText" type="pcre2">(?i)(IEX|Invoke-Expression)[^;]*(DownloadString|DownloadData|Invoke-WebRequest|Net\.WebClient)</field>
+    <field name="win.eventdata.scriptBlockText" type="pcre2">(?is)^(?=.*\b(IEX|Invoke-Expression)\b)(?=.*\b(DownloadString|DownloadData|Invoke-WebRequest)\b)</field>
     <description>PowerShell ScriptBlock with IEX + Download pattern: likely staged payload execution</description>
     <mitre>
       <id>T1059.001</id>
@@ -220,7 +220,7 @@
   -->
   <rule id="100220" level="12">
     <if_sid>61603</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\\\mshta\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\mshta\.exe$</field>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?\s+(https?:|//|ftp:)</field>
     <description>mshta.exe executing remote HTA file: $(win.eventdata.commandLine)</description>
     <mitre>
@@ -236,8 +236,8 @@
   -->
   <rule id="100221" level="13">
     <if_sid>61603</if_sid>
-    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\\\mshta\.exe$</field>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\\\(powershell(_ise)?|cmd|wscript|cscript)\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\mshta\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell(_ise)?|cmd|wscript|cscript)\.exe$</field>
     <description>mshta.exe spawned script interpreter $(win.eventdata.image): classic LOLBAS chain</description>
     <mitre>
       <id>T1218.005</id>
@@ -279,7 +279,7 @@
   -->
   <rule id="100232" level="6">
     <if_sid>61613</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\\\(Temp|Windows\\Temp|Public|AppData\\Local\\Temp)\\\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\(Temp|Windows\\Temp|Public|AppData\\Local\\Temp)\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
     <description>Archive file created in temp folder: $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
     <mitre>
       <id>T1560.001</id>
@@ -317,7 +317,7 @@
   -->
   <rule id="100240" level="9">
     <if_sid>61615</if_sid>
-    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\\\Software\\\\(Wow6432Node\\\\)?Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(Once)?\\\\</field>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\Software\\(Wow6432Node\\)?Microsoft\\Windows\\CurrentVersion\\Run(Once)?\\</field>
     <description>Registry persistence: new value in Run key: $(win.eventdata.targetObject) = $(win.eventdata.details)</description>
     <mitre>
       <id>T1547.001</id>

@@ -1,6 +1,6 @@
 # SOC Home Lab — Wazuh SIEM with Active Directory
 
-> A fully functional Security Operations Center home laboratory built to demonstrate practical detection engineering, incident response, and threat hunting skills for a junior SOC Analyst role.
+> A Security Operations Center home laboratory project designed to demonstrate practical detection engineering, incident response, and threat hunting skills for a junior SOC Analyst role.
 
 [![Wazuh](https://img.shields.io/badge/SIEM-Wazuh%204.7-blue)](https://wazuh.com/)
 [![MITRE](https://img.shields.io/badge/Framework-MITRE%20ATT%26CK-red)](https://attack.mitre.org/)
@@ -42,7 +42,7 @@ python3 scripts/validate_detections.py
 ## Detection catalogue
 
 Nine detection scenarios in [`docs/detections/`](docs/detections/) — one file per
-scenario, covering all 17 custom Wazuh rules. Each documents the attack technique,
+scenario, covering all 18 custom Wazuh rules. Each documents the attack technique,
 log source, detection logic, the rule itself, MITRE mapping, expected alert,
 **false positives and limitations**.
 
@@ -229,3 +229,9 @@ These are the gaps between a home lab and a real production SOC — items I woul
 Built as a portfolio project for a junior SOC Analyst role. Feedback and PRs are welcome.
 
 **Licence:** MIT — feel free to fork, adapt, and use any part of this for your own learning.
+
+## Weryfikacja środowiska — 2026-10-17
+
+Walidatory przeszły: 18 reguł Wazuh, 4 Sigma, 10 plików zdarzeń i zgodność 16 dokumentów z 18 regułami. `docker compose -f infrastructure/docker/docker-compose.yml config -q` także przeszedł. Uruchomiono wyłącznie walidację statyczną, bez symulacji ataków.
+
+Pełny lab Windows/Active Directory/Wazuh nie został uruchomiony. Nie ma nowych wyników TP/FP, korelacji między hostami ani alertów z prawdziwego managera. Przed użyciem operacyjnym wykonaj opisany harness i zachowaj rzeczywiste zdarzenia oraz alerty jako dowody; sama poprawność składni reguł tego nie zastępuje. Nie wdrożono infrastruktury.
