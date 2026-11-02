@@ -43,8 +43,9 @@ all:
         # same. Trzymanie ich w repozytorium nie zmniejsza bezpieczeństwa —
         # zmniejszyłoby je dopiero użycie tego inwentarza poza laboratorium.
         #
-        # Lab działa w odizolowanych sieciach 192.168.x (patrz docs/01-architecture.md)
-        # i nie jest wystawiony na zewnątrz. Do czegokolwiek trwałego:
+        # Goście korzystają ze wspólnej sieci host-only i domyślnego NAT;
+        # host-only nie izoluje ról ani nie blokuje wyjścia. Używaj tego
+        # inwentarza tylko z jednorazowymi VM. Do trwałego użycia:
         # zmień hasła po provisioningu, przełącz WinRM na HTTPS z walidacją
         # certyfikatu i trzymaj poświadczenia w Ansible Vault
         # (`ansible-vault encrypt_string`), a nie w inwentarzu.

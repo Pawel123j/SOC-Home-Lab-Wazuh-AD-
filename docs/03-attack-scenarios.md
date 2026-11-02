@@ -57,7 +57,7 @@ Wbudowane:
 - **Rule 5712** — `sshd: Possible attack on the system`, level 10, triggers po 8 logowaniach z tego samego IP w 120 s.
 
 Własna nadbudowa:
-- **Rule 100110** (`custom-wazuh-rules.xml`) — `Brute force SSH from external segment (VLAN 30)` — łapie ten sam wzorzec, ale tylko gdy źródło jest w `192.168.30.0/24`, level 12, MITRE T1110.001.
+- **Rule 100110** (`custom-wazuh-rules.xml`) — `Brute force SSH from Kali role address range` — łapie ten sam wzorzec tylko dla adresu źródłowego z `192.168.30.0/24`; to filtr adresu, nie izolacja sieci, level 12, MITRE T1110.001.
 
 ### 1.5. Co robi analityk (pierwsze 5 minut)
 
@@ -214,7 +214,7 @@ DestinationHostname: -
 ### 3.4. Detekcja
 
 - **Rule 100212** — `Suspicious PowerShell EncodedCommand` — linia komend zawiera `-Enc`, `-EncodedCommand`, `-e ` z długim base64, level 11, MITRE T1059.001 + T1027.
-- **Rule 100213** — `PowerShell network connection to external IP` — koreluje EID 1 (powershell) z EID 3 (NetworkConnect) do IP spoza VLAN 20, level 10, MITRE T1071.001.
+- **Rule 100213** — `PowerShell network connection to external IP` — koreluje EID 1 (powershell) z EID 3 (NetworkConnect) do adresu spoza zakresu roli WS `192.168.20.0/24`; filtr nie oznacza granicy zapory ani internetu, level 10, MITRE T1071.001.
 - **Rule 100214** — `PowerShell with IEX and DownloadString` — pattern w ScriptBlock (EID 4104) zawierający `IEX` AND (`DownloadString` OR `DownloadFile`), level 12, MITRE T1059.001 + T1105.
 
 ### 3.5. Co robi analityk
@@ -351,7 +351,7 @@ Dodatkowo na poziomie sieciowym (jeśli mamy Suricata/Zeek w pipeline — w tym 
 
 ### 5.4. Detekcja
 
-- **Rule 100230** — `Large data transfer from internal host to external IP` — agreguje EID 3, jeśli z jednego `agent.name` w 5 min są > 20 połączeń do tego samego `DestinationIp` poza VLAN 20, level 10, MITRE T1041.
+- **Rule 100230** — `Large data transfer from internal host to external IP` — agreguje EID 3, jeśli z jednego `agent.name` w 5 min są > 20 połączeń do tego samego `DestinationIp` spoza zakresu roli WS `192.168.20.0/24`; filtr nie oznacza granicy zapory ani internetu, level 10, MITRE T1041.
 - **Rule 100231** — `Suspicious archive creation followed by external connection` — koreluje EID 11 (FileCreate `.zip` / `.rar` / `.7z` w `Temp`) z następującym w ciągu 10 min EID 3 do IP spoza segmentu, level 12, MITRE T1041 + T1560.001.
 
 ### 5.5. Co robi analityk

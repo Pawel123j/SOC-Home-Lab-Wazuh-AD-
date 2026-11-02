@@ -1,90 +1,65 @@
-# Human action required — SOC Home Lab
+# Pozostałe walidacje SOC Home Lab
 
-Ten projekt z natury wymaga uruchomionego laboratorium: hypervisora, kilku
-maszyn wirtualnych i przeglądarki. Poniższe kroki są rozpisane dokładnie,
-zamiast być pominięte albo udane.
+## Stan na 2 listopada 2026
 
-CI nie jest tym zablokowane: walidacja reguł Wazuh, reguł Sigma, zdarzeń
-testowych, YAML-a infrastruktury i pliku compose przechodzi bez żadnej z tych
-czynności.
+Walidacja statyczna reguł XML, Sigma, fixtures i dokumentacji przechodzi.
+Uruchomiony manager Wazuh 4.7.5 zwrócił kod `0` dla
+`/var/ossec/bin/wazuh-analysisd -t`, czyli przyjął konfigurację. W tym
+kontenerze pojawił się też komunikat o ograniczeniu limitu deskryptorów przez
+hosta; nie zmienił kodu wyjścia.
 
----
+Test `wazuh-logtest` **nie potwierdził** reguł Sysmon z fixtures. Narzędzie
+przetworzyło ich JSON dekoderem `json`, a nie `windows_eventchannel`, który jest
+przodkiem reguł 100210–100214 i pozostałych reguł Sysmon. Nie pojawiła się faza
+3 ani wynik dopasowania. Wcześniejsza instrukcja, że samo wklejenie fixtures do
+kontenera potwierdza detekcję, była błędna i została wycofana z dokumentacji.
+Nie raportuj wyników FP/FN z tych fixtures jako potwierdzenia detekcji.
 
-## 1. Postaw harness Docker i potwierdź, że 9 zdarzeń wyzwala reguły
+## Wymagany test z prawdziwym kanałem Windows Event Channel
 
-To jest **najważniejszy** punkt tej listy: CI potwierdza, że reguły są
-poprawne składniowo i że łańcuchy `if_sid` się spinają, ale **nie uruchamia
-Wazuha**, więc nie potwierdza, że reguła faktycznie strzeli.
+Na hoście z VirtualBox, Vagrant i około 32 GiB RAM:
 
-Wariant dockerowy wystarczy — nie potrzeba pełnego labu na VM-ach (4 GB RAM
-zamiast 32 GB):
+1. Uruchom cztery VM zgodnie z [README](README.md) i zainstaluj agentów przez
+   Ansible.
+2. W Windows sprawdź, że Sysmon, agent Wazuh i kanał
+   `Microsoft-Windows-Sysmon/Operational` są aktywne.
+3. Wygeneruj **benign** zdarzenie procesu PowerShell, aby sprawdzić regułę
+   100212 bez wykonywania pobierania ani modyfikacji systemu:
 
-```bash
-cd infrastructure/docker
-docker compose up -d
-docker compose logs -f wazuh-manager   # poczekaj na "Started wazuh-manager"
+   ```powershell
+   $command = 'Get-Date'
+   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+   & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+       -NoProfile -EncodedCommand $encoded
+   ```
 
-# Sprawdź, że manager załadował reguły własne bez błędu:
-docker exec -it wazuh-manager /var/ossec/bin/wazuh-logtest -t
+4. Zapisz surowe zdarzenie po stronie Windows oraz alert z Dashboardu; sprawdź
+   ID reguły, agenta i timestamp. Potem uruchom zwykłe `powershell.exe -NoProfile
+   -Command Get-Date` jako próbkę negatywną.
+5. Zapisz wynik pozytywny i negatywny wraz z wersją managera, konfiguracją
+   dekodera i reguły. Powtórz osobno dla każdej reguły, zanim zadeklarujesz
+   pokrycie scenariuszy. Reguły korelacyjne wymagają odpowiedniej sekwencji i
+   nie są dowiedzione pojedynczym zdarzeniem.
 
-# Przepuść każde z 9 syntetycznych zdarzeń przez silnik reguł:
-for f in test-events/*.json; do
-  echo "=== $f"
-  docker exec -i wazuh-manager /var/ossec/bin/wazuh-logtest < "$f"
-done
-```
+Nie uruchamiaj innych scenariuszy ofensywnych poza maszynami, które kontrolujesz.
+Brak alertu jest wynikiem testu do diagnozy, a nie powodem do wpisania
+oczekiwanego ID jako wyniku.
 
-**Czego szukać:** dla każdego zdarzenia `wazuh-logtest` powinien wypisać
-`Rule id: 1002xx` z zakresu reguł własnych. Zdarzenie, które nie trafia w żadną
-regułę własną, oznacza lukę w detekcji — to realne znalezisko, warte poprawki
-w regule, a nie zignorowania.
+## Screenshoty i pełny provisioning
 
-Wyniki warto zapisać do `docs/04-detection-results.md`, który dziś opisuje
-oczekiwane zachowanie.
+Do portfolio nadal brakuje zrzutów z prawdziwego Dashboardu z alertami z hostów
+Windows. Instrukcje wymaganych obrazów znajdują się w
+[`docs/screenshots/wazuh/README.md`](docs/screenshots/wazuh/README.md). Nie
+zastępuj ich mockupami ani zrzutami z syntetycznego tekstu.
 
----
+Kontener w `infrastructure/docker/` służy do lokalnego testu konfiguracji i
+ładowania reguł. Nie zawiera agenta Windows, Active Directory, Indexera ani
+Dashboardu. Nie stanowi odpowiednika pełnego wdrożenia VM.
 
-## 2. Zrób zrzuty z dashboardu
+## Poświadczenia
 
-Wymaga pełnego labu (dashboard nie wchodzi w skład wariantu dockerowego):
-
-```bash
-cd infrastructure/vagrant
-vagrant up                      # ~25 min, 4 VM-y
-cd ../ansible
-ansible-playbook -i inventory.yml site.yml
-
-# Przeprowadź scenariusze z maszyny Kali:
-bash attacks/01-brute-force-ssh.sh
-powershell -File attacks/02-mimikatz-simulation.ps1
-```
-
-Następnie zrób 5 zrzutów opisanych w
-[`docs/screenshots/wazuh/README.md`](docs/screenshots/wazuh/README.md).
-
-**Nie fabrykuj tych obrazków.** Całe repozytorium opiera się na twierdzeniu, że
-te reguły wykrywają te ataki — sfabrykowany alert podważyłby wszystko inne.
-Jeśli reguła nie strzeli, to jest wynik do naprawienia w regule.
-
----
-
-## 3. Opcjonalnie: nagranie „atak → alert"
-
-Dwu-, trzyminutowe wideo (terminal Kali po lewej, dashboard Wazuh po prawej)
-pokazuje ten projekt lepiej niż jakikolwiek zrzut. To jedyny format, w którym
-widać opóźnienie między atakiem a alertem.
-
----
-
-## Uwagi o poświadczeniach
-
-Dwa hasła w repozytorium są **celowe i nie są wyciekiem**:
-
-- `ansible_password: vagrant` w `infrastructure/ansible/inventory.yml` — publicznie
-  znane domyślne dane logowania obrazów bazowych Vagranta.
-- `API_PASSWORD` w `infrastructure/docker/docker-compose.yml` — domyślne hasło
-  API z dokumentacji Wazuha.
-
-Oba są opatrzone komentarzem w miejscu użycia, wraz z tym, co należy zmienić
-przy jakimkolwiek trwałym wdrożeniu. `.gitignore` wyklucza `secrets/`
-i `wazuh-passwords.txt`, czyli pliki generowane przez instalator.
+`ansible_password: vagrant` jest publicznym domyślnym hasłem tymczasowych boxów
+Vagranta, a nie sekretem produkcyjnym. Używaj inwentarza wyłącznie z tymi
+jednorazowymi VM-ami; przed innym użyciem skonfiguruj poświadczenia przez
+Ansible Vault. `WAZUH_API_PASSWORD` w Compose jest wymagane z prywatnego
+środowiska i nie ma domyślnej wartości w pliku.

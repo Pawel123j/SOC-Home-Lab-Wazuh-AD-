@@ -1,6 +1,8 @@
+> Aktualny wariant używa wspólnej sieci host-only **192.168.0.0/16**; role nie są odizolowane VLAN-ami, a domyślny NAT Vagranta może zapewniać gościom wyjście do internetu. Szczegóły: [architektura](01-architecture.md). Quickstart: [README](../README.md). Poniższe kroki ręczne są alternatywą dla provisioningu Vagranta — nie uruchamiaj ich ponownie po `vagrant up`.
+
 # 02 — Instalacja krok po kroku
 
-Dokument prowadzi od pustej maszyny hostującej do działającego SIEM-a z agentami zbierającymi logi. Czas potrzebny: ~90 minut przy pierwszym uruchomieniu, z czego 60 min to pobieranie ISO i paczek.
+Dokument prowadzi przez wymagania hosta i provisioning laboratorium. Czas pierwszego uruchomienia zależy od pobrania boxów oraz instalacji Windows i Wazuha; nie zakładaj stałego czasu.
 
 ---
 
@@ -24,13 +26,13 @@ Sprawdź na maszynie hostującej:
 
 ```powershell
 # Windows
-systeminfo | findstr /C:"Total Physical Memory"   # >= 16 GB
+systeminfo | findstr /C:"Total Physical Memory"   # zalecane >= 32 GB
 Get-WmiObject Win32_Processor | Select VirtualizationFirmwareEnabled  # True
 ```
 
 ```bash
 # Linux / macOS
-free -h            # >= 16 GB
+free -h            # zalecane >= 32 GB
 egrep -c '(vmx|svm)' /proc/cpuinfo   # > 0
 ```
 
@@ -38,7 +40,7 @@ Zainstaluj:
 
 | Narzędzie | Wersja | Komenda weryfikująca |
 |---|---|---|
-| VirtualBox | 7.0+ | `VBoxManage --version` |
+| VirtualBox | 7.0+ (skonfigurowany provider) | `VBoxManage --version` |
 | Vagrant | 2.4+ | `vagrant --version` |
 | Ansible | 2.15+ (na hoście Linux/macOS lub WSL na Windows) | `ansible --version` |
 | Git | dowolny | `git --version` |
@@ -50,8 +52,8 @@ W BIOS-ie: **VT-x / AMD-V** włączone. Bez tego maszyny 64-bit nie wystartują.
 ## 2. Postawienie maszyn przez Vagrant
 
 ```bash
-git clone https://github.com/<twoj-user>/soc-home-lab.git
-cd soc-home-lab/infrastructure/vagrant
+git clone https://github.com/Pawel123j/SOC-Home-Lab-Wazuh-AD-.git
+cd SOC-Home-Lab-Wazuh-AD-/infrastructure/vagrant
 vagrant up
 ```
 
@@ -142,8 +144,8 @@ sudo cp /tmp/custom-wazuh-rules.xml /var/ossec/etc/rules/local_rules.xml
 sudo chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml
 sudo chmod 660 /var/ossec/etc/rules/local_rules.xml
 
-# Test składni przed restartem!
-sudo /var/ossec/bin/wazuh-logtest -t
+# Test konfiguracji/reguł przed restartem
+sudo /var/ossec/bin/wazuh-analysisd -t
 
 # Jeśli OK — restart managera
 sudo systemctl restart wazuh-manager
@@ -166,8 +168,7 @@ PowerShell jako Administrator:
 # Ustaw statyczne IP
 New-NetIPAddress -InterfaceAlias "Ethernet" `
                  -IPAddress 192.168.20.10 `
-                 -PrefixLength 24 `
-                 -DefaultGateway 192.168.20.1
+                 -PrefixLength 16
 
 Set-DnsClientServerAddress -InterfaceAlias "Ethernet" `
                            -ServerAddresses 127.0.0.1
@@ -246,8 +247,7 @@ Na WS01:
 # Statyczne IP
 New-NetIPAddress -InterfaceAlias "Ethernet" `
                  -IPAddress 192.168.20.20 `
-                 -PrefixLength 24 `
-                 -DefaultGateway 192.168.20.1
+                 -PrefixLength 16
 Set-DnsClientServerAddress -InterfaceAlias "Ethernet" `
                            -ServerAddresses 192.168.20.10
 
@@ -401,7 +401,7 @@ sudo /var/ossec/bin/agent_control -l   # wszyscy powinni być Active
 | Agent `Disconnected` po instalacji | Firewall na endpointach blokuje 1514 wychodzące | `New-NetFirewallRule -DisplayName "Wazuh-Out" -Direction Outbound -Protocol TCP -RemotePort 1514 -Action Allow` |
 | `wazuh-indexer` nie startuje, OOM w dmesg | Za mało RAM dla JVM | `/etc/wazuh-indexer/jvm.options` → `-Xms1g -Xmx1g` |
 | Dashboard pokazuje "No alerts" mimo, że są w `/var/ossec/logs/alerts/alerts.json` | Indeks nie jest tworzony | Sprawdź `curl -u admin:HASLO -k https://localhost:9200/_cat/indices` — czy istnieje `wazuh-alerts-4.x-YYYY.MM.DD` |
-| `wazuh-logtest -t` zwraca błąd składni XML | Pomyłka w `local_rules.xml` | Czytaj uważnie numer linii w błędzie; częsta wina to brak zamknięcia `</group>` |
+| `wazuh-analysisd -t` zwraca błąd konfiguracji | Błąd managera lub `local_rules.xml` | Odczytaj plik i linię zgłoszoną przez manager, popraw ją i powtórz test przed restartem |
 | Brak EventID 4688 (Process Create) z linią komend | Audyt PolicyChange wyłączony lub brak GPO | `auditpol /set /subcategory:"Process Creation" /success:enable` + GPO `Include command line in process creation events` = Enabled |
 | Sigma → Wazuh: reguła nie strzela | Mapowanie pól (`process.command_line` vs `data.win.eventdata.commandLine`) | Użyj `sigma convert -t wazuh` aktualnej wersji `pysigma-backend-elasticsearch` z plugin `wazuh-mapping` |
 | Czas alertów przesunięty o 2 h | Strefa czasowa różna na agencie i managerze | `timedatectl set-timezone Europe/Warsaw` na obu, restart agenta |

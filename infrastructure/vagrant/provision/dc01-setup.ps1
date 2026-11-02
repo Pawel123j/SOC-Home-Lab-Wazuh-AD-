@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # DC01 — provisioning Windows Server 2019 jako kontroler domeny soclab.local
 # Wywoływany przez Vagranta po pierwszym boocie.
 # Idempotentny — może być uruchamiany wielokrotnie.
@@ -19,7 +19,7 @@ $ipAddr = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 
 if ($ipAddr) {
     $iface = Get-NetAdapter -InterfaceIndex $ipAddr.InterfaceIndex
-    Write-Host "[+] Adapter dla VLAN 20: '$($iface.Name)' (IP już $($ipAddr.IPAddress))"
+    Write-Host "[+] Adapter dla sieci laboratoryjnej: '$($iface.Name)' (IP już $($ipAddr.IPAddress))"
 } else {
     # Fallback: jeśli Vagrant jeszcze nie ustawił IP, weź pierwszy non-loopback non-NAT adapter
     $iface = Get-NetAdapter | Where-Object {
@@ -34,11 +34,11 @@ if ($ipAddr) {
         exit 1
     }
 
-    Write-Host "[+] Ustawiam statyczne IP 192.168.20.10/24 na adapterze '$($iface.Name)'"
+    Write-Host "[+] Ustawiam statyczne IP 192.168.20.10/16 na adapterze '$($iface.Name)'"
     New-NetIPAddress -InterfaceIndex $iface.ifIndex `
                      -IPAddress 192.168.20.10 `
-                     -PrefixLength 24 `
-                     -DefaultGateway 192.168.20.1 -ErrorAction SilentlyContinue | Out-Null
+                     -PrefixLength 16 `
+                     -ErrorAction Stop | Out-Null
 }
 
 # DNS na 127.0.0.1 (DC sam dla siebie po promocji)

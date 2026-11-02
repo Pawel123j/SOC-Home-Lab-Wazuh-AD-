@@ -2,7 +2,7 @@
 
 ## Technika ataku
 
-Napastnik z segmentu zewnętrznego (VLAN 30) prowadzi atak słownikowy na usługę SSH
+Maszyna Kali (`192.168.30.30`) prowadzi kontrolowany test słownikowy na usługę SSH
 serwera Wazuh. Interesuje nas nie sam atak, lecz moment, w którym się powiedzie.
 
 ## Źródło logu
@@ -29,7 +29,7 @@ i tylko ono dostaje level 14.
   <if_matched_sid>5710</if_matched_sid>
   <same_source_ip />
   <srcip>192.168.30.0/24</srcip>
-  <description>SSH brute force from external segment (VLAN 30): 8 failed attempts in 120s from $(srcip)</description>
+  <description>SSH brute force from Kali role address range: 8 failed attempts in 120s from $(srcip)</description>
   <mitre>
     <id>T1110.001</id>
   </mitre>

@@ -1,202 +1,73 @@
-# Docker Quick Start — walidacja reguł Wazuh
+# Docker — walidacja konfiguracji Wazuh
 
-**Stan ETAPU 3 (2026-10-20): PARTIAL.** Sprawdzono 13 testów PCRE2, strukturę
-18 reguł Wazuh, 4 Sigma, 10 fixtures i zgodność 16 dokumentów. Testy wykryły
-nadmiarowe escapowanie separatorów Windows, pominięcie `-e` i kolejności
-download → IEX; wzorce i fixtures poprawiono. PCRE2 nie potwierdza dekoderów,
-korelacji ani dostarczenia alertów przez Wazuh.
+Compose uruchamia wyłącznie Wazuh Manager. Ułatwia lokalne sprawdzenie, czy
+manager przyjmuje konfigurację i reguły; nie zapewnia pełnego toru zdarzeń
+Windows.
 
-Przed Compose ustaw własny `WAZUH_API_PASSWORD` przez środowisko lub prywatny
-plik `.env`. Wszystkie publikowane porty są teraz ograniczone do 127.0.0.1;
-domyślne hasło w kodzie usunięto. Nie wyłączaj weryfikacji TLS przy dołączaniu
-indexera. Przypięty manager 4.7.5 wymaga osobnej oceny/aktualizacji obrazu —
-audyt zależności Pythona nie jest audytem Wazuh.
+## Stan i zakres
 
-Po uruchomieniu **własnego izolowanego** managera z bieżącymi regułami:
+- Obraz `wazuh/wazuh-manager:4.7.5` jest przypięty jawnie. To starsza wersja;
+  przed użyciem poza jednorazowym labem sprawdź wspieraną wersję i poprawki
+  bezpieczeństwa.
+- W bieżącej sesji kontener był `healthy`, a
+  `/var/ossec/bin/wazuh-analysisd -t` zwrócił kod `0`. Wystąpił niekrytyczny
+  komunikat hosta o limicie deskryptorów plików.
+- Fixtures JSON Sysmon były widziane przez `wazuh-logtest` jako dekoder `json`,
+  nie `windows_eventchannel`. Nie uzyskano fazy 3 ani pozytywnego dopasowania.
+  Weryfikacja detekcji Windows pozostaje niepotwierdzona; zobacz
+  [`HUMAN_ACTION_REQUIRED.md`](../../HUMAN_ACTION_REQUIRED.md).
 
-```sh
-python scripts/run_wazuh_fixtures.py --container TWOJ_KONTENER --output /nowy/raport.json
-```
-
-Polecenie uruchamiaj z katalogu głównego repozytorium. Sprawdza 10 pozytywnych
-i 10 negatywnych przypadków poprzez rzeczywisty `wazuh-logtest`, zapisuje pełny
-wynik oraz FN/FP i zwraca błąd przy niezgodności. **Nie uruchomiono go w tym
-środowisku**: obraz wymaga kilku GB, na dysku roboczym pozostało poniżej 1 GB.
-Nie zmierzono tu FN/FP managera. Windows/AD i Sysmon są niedostępne; integracja
-z nimi pozostaje **BLOCKED**. Na wspieranej maszynie powtórz test po restarcie
-własnego managera, a korelacje i odbiór alertów zweryfikuj osobno w labie AD.
-Zachowaj poprzednie raporty i wolumeny; nie wykonuj `down -v` na istniejących danych.
-
-Lekka alternatywa dla pełnego labu Vagrant. **Stawia tylko Wazuh manager** w kontenerze, do walidacji reguł detekcji bez konieczności pełnej infrastruktury (4 VM, AD, Sysmon).
-
----
-
-## Po co to jest
-
-Pełen lab (`infrastructure/vagrant/`) wymaga:
-- 32 GB RAM (4 VM-y na raz)
-- VirtualBox + Vagrant
-- ~25 min build time
-
-Docker setup wymaga:
-- ~4 GB RAM
-- Docker (Linux containers)
-- ~3 min do uruchomienia
-
-**Trade-off:** Docker nie postawi Active Directory, Windows 10 ofiary ani Sysmona — bo to elementy Windowsowe, których Linuxowy kontener nie pomieści. Dostajesz **sam silnik SIEM-a**.
-
-### Co realnie zyskujesz
-
-| Walidacja | Sam parser XML | Docker (Wazuh manager) | Pełen Vagrant lab |
-|---|---|---|---|
-| XML well-formed | ✅ | ✅ | ✅ |
-| Sam Wazuh ładuje reguły bez błędu | ❌ | ✅ | ✅ |
-| Regex PCRE2 poprawnie się kompiluje | ❌ | ✅ | ✅ |
-| Łańcuchy `if_sid` wskazują na istniejące reguły | ❌ | ✅ | ✅ |
-| Reguła faktycznie strzela na syntetyczne zdarzenie | ❌ | ✅ | ✅ |
-| Pełen pipeline (agent → manager → indexer → alert) | ❌ | ❌ | ✅ |
-| Detekcja realnego ataku na realnym Windowsie | ❌ | ❌ | ✅ |
-
-Docker daje 5 z 7 walidacji za ułamek kosztu zasobów — perfekcyjne dla portfolio.
-
----
-
-## Wymagania
-
-- Docker (Linux containers) w wersji ≥ 20.10
-- Na Windows: Docker Desktop z włączonym **WSL2 backend** lub **Hyper-V**
-- ~4 GB wolnego RAM
-- ~3 GB dysku na obraz `wazuh/wazuh-manager:4.7.5`
-
-Sprawdź:
-
-```bash
-docker version
-docker info --format '{{.MemTotal}} bytes RAM'
-```
-
----
+Kontener nie zawiera Windows, agenta, Active Directory, Indexera ani Dashboardu.
+Nie uruchamia też skryptów z `attacks/`.
 
 ## Uruchomienie
 
+Ustaw prywatne hasło API; nie wpisuj go do repozytorium ani historii poleceń:
+
 ```bash
 cd infrastructure/docker
+read -r -s -p 'Wazuh API password: ' WAZUH_API_PASSWORD
+printf '\n'
+export WAZUH_API_PASSWORD
+docker compose config -q
 docker compose up -d
-
-# Czekaj ~60s na healthcheck:
 docker compose ps
-# Powinno pokazac STATUS = healthy
 ```
 
-## Walidacja reguł — `wazuh-logtest`
-
-Najprostsza droga: interaktywne testowanie pojedynczych zdarzeń.
+Poczekaj, aż healthcheck pokaże `healthy`, a następnie sprawdź konfigurację:
 
 ```bash
-docker exec -it wazuh-manager /var/ossec/bin/wazuh-logtest
+docker exec wazuh-manager /var/ossec/bin/wazuh-analysisd -t
 ```
 
-Wkleisz JSON zdarzenia (jedna linia), `wazuh-logtest` zwróci:
-1. Który decoder rozpoznał zdarzenie
-2. Która reguła (rule.id) strzeliła
-3. Level i opis alertu
+Ten test weryfikuje ładowanie konfiguracji managera. Nie dowodzi, że reguła
+pasuje do syntetycznego zdarzenia ani że alert dotarł do Dashboardu.
 
-### Przykład: test reguły 100210 (LSASS dump)
+Wszystkie opublikowane porty są ograniczone do `127.0.0.1`. Zmienne API,
+poświadczenia, porty i trwałe wolumeny są zdefiniowane w
+[`docker-compose.yml`](docker-compose.yml). Używaj osobnego projektu Compose,
+jeśli na hoście działa inny Wazuh o stałej nazwie kontenera.
+
+## Walidacja statyczna repozytorium
+
+Z katalogu głównego:
 
 ```bash
-docker exec -i wazuh-manager /var/ossec/bin/wazuh-logtest < test-events/02-lsass-access.json
+python3 scripts/validate_detections.py
+python3 -m pytest -q tests
+python3 scripts/validate_docs_against_rules.py
 ```
 
-Spodziewany output (skrót):
+Walidatory sprawdzają m.in. strukturę XML/YAML/JSON, regex PCRE2, lokalne
+łańcuchy SID oraz zgodność części dokumentacji z regułami. Reguły zależne od
+wbudowanych SID Wazuha i poprawność dopasowania Windows Event Channel wymagają
+testu z odpowiednim silnikiem oraz agentem.
 
-```
-**Phase 3: Completed filtering (rules).
-        Rule id: '100210'
-        Level: '14'
-        Description: 'Possible LSASS memory access (Mimikatz-like)...'
-        MITRE: ['T1003.001']
-```
-
-### Wszystkie scenariusze testowe
-
-Każdy plik w `test-events/` to jeden syntetyczne zdarzenie, oczekuje, że **trafi w konkretną regułę**:
-
-| Plik | Zdarzenie | Oczekiwana reguła | Level |
-|---|---|---|---|
-| `01-ssh-bruteforce.log` | sshd Failed password z 192.168.30.30 | 5710 (potem 100110 po 8 próbach) | 5/12 |
-| `02-lsass-access.json` | Sysmon EID 10, lsass.exe, GrantedAccess=0x1410 | **100210** | 14 |
-| `03-lsass-comsvcs.json` | Sysmon EID 1, rundll32 + comsvcs + MiniDump | **100211** | 13 |
-| `04-ps-encoded.json` | Sysmon EID 1, powershell.exe -Enc <długi base64> | **100212** | 11 |
-| `05-ps-network.json` | Sysmon EID 3, powershell → 192.168.30.30:8080 | **100213** | 10 |
-| `06-ps-iex-download.json` | EventLog 4104, IEX + DownloadString w ScriptBlock | **100214** | 12 |
-| `07-mshta-remote.json` | Sysmon EID 1, mshta + http URL | **100220** | 12 |
-| `08-mshta-child.json` | Sysmon EID 1, parent=mshta, image=powershell | **100221** | 13 |
-| `09-archive-temp.json` | Sysmon EID 11, FileCreate `.zip` w `Temp` | **100232** | 6 |
-| `10-registry-run.json` | Sysmon EID 13, RegistryValueSet w `\Run\` | **100240** | 9 |
-
-### Skrypt batch — przepuść wszystkie scenariusze
-
-Po starcie kontenera:
+## Zatrzymanie
 
 ```bash
-# Z folderu infrastructure/docker:
-for f in test-events/*.json test-events/*.log; do
-  echo "=== $f ==="
-  docker exec -i wazuh-manager /var/ossec/bin/wazuh-logtest < "$f" 2>&1 | grep -E "Rule id|Level|Description" | head -3
-  echo
-done
+docker compose down
 ```
 
----
-
-## Diagnostyka
-
-### Kontener nie startuje
-
-```bash
-docker compose logs wazuh-manager
-# Najczęstsze błędy:
-# - "ERROR ossec-syscheckd: ..." — błąd składni reguły, sprawdź <field type=pcre2>
-# - "wazuh-analysisd:" — często wskazuje konkretną linię w local_rules.xml
-```
-
-### Reguła nie strzela mimo, że event powinien pasować
-
-```bash
-# Wlej event recznie, wlacz verbose:
-docker exec -it wazuh-manager /var/ossec/bin/wazuh-logtest -v
-```
-
-Verbose pokazuje **fazy dopasowania**: decoder → pre-decoder → rule. Jeśli decoder nie złapał zdarzenia, reguły go nigdy nie zobaczą — zwykle to literówka w polu `eventID`, `providerName` itp.
-
-### "Rule 5710 didn't match" mimo prawidłowego SSH
-
-`wazuh-logtest` testuje pojedyncze zdarzenia. Reguła 100110 (brute force) wymaga **8 zdarzeń w 120 s** — nie wystrzeli na jedno. Zobacz `01-ssh-bruteforce-batch.sh` (jeśli istnieje) który puszcza 10 takich w pętli.
-
----
-
-## Czyszczenie
-
-```bash
-docker compose down -v
-# -v usuwa tez wolumeny (logi, kolejki)
-# Jesli chcesz zachowac stan, uzyj samo: docker compose down
-```
-
----
-
-## Co ten setup NIE robi (świadomie)
-
-- Brak Wazuh Indexer + Dashboard — ten compose to **lightweight rule validator**. Pełna paczka SIEM (z UI do screenshotów na portfolio) wymaga generowania certyfikatów. Patrz `docker-compose.full-stack.yml` (jeśli/kiedy zostanie dodany).
-- Brak agentów. Manager nasłuchuje na 1514, ale w tym setupie nikt do niego nie pisze. To OK — `wazuh-logtest` testuje reguły wstrzykując zdarzenia bezpośrednio w pipeline manager-a.
-- Brak Active Response — wymaga konfiguracji firewall hosta, w kontenerze nie ma sensu.
-- Brak FIM (File Integrity Monitoring) ani SCA — same działają, ale wymagają agentów na realnych systemach.
-
----
-
-## Następny krok
-
-Jeśli reguły strzelają poprawnie tutaj — możesz iść dalej z czystym sumieniem:
-1. Wrzuć repo na GitHub.
-2. W rozmowach o pracę pokaż: "Mam custom rules zwalidowane przeciwko Wazuh 4.7 manager. Tu output `wazuh-logtest`."
-3. Pełen lab z AD/Windows postawisz na maszynie z 32+ GB RAM, jeśli kiedyś chcesz pokazać end-to-end detekcję.
+Ta komenda zachowuje wolumeny. `docker compose down -v` usuwa stan managera;
+używaj jej wyłącznie wtedy, gdy świadomie chcesz skasować dane tego projektu.

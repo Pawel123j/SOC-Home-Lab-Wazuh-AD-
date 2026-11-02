@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # WS01 — provisioning Windows 10 jako stacja robocza w domenie soclab.local
 # Czeka aż DC01 będzie gotowy, dołącza do domeny, instaluje Sysmon,
 # konfiguruje logging PowerShell.
@@ -18,7 +18,7 @@ $ipAddr = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 
 if ($ipAddr) {
     $iface = Get-NetAdapter -InterfaceIndex $ipAddr.InterfaceIndex
-    Write-Host "[+] Adapter dla VLAN 20: '$($iface.Name)' (IP już $($ipAddr.IPAddress))"
+    Write-Host "[+] Adapter dla sieci laboratoryjnej: '$($iface.Name)' (IP już $($ipAddr.IPAddress))"
 } else {
     # Fallback: pierwszy adapter Up niebędący loopback ani NAT
     $iface = Get-NetAdapter | Where-Object {
@@ -32,11 +32,11 @@ if ($ipAddr) {
         exit 1
     }
 
-    Write-Host "[+] Ustawiam statyczne IP 192.168.20.20/24 na adapterze '$($iface.Name)'"
+    Write-Host "[+] Ustawiam statyczne IP 192.168.20.20/16 na adapterze '$($iface.Name)'"
     New-NetIPAddress -InterfaceIndex $iface.ifIndex `
                      -IPAddress 192.168.20.20 `
-                     -PrefixLength 24 `
-                     -DefaultGateway 192.168.20.1 -ErrorAction SilentlyContinue | Out-Null
+                     -PrefixLength 16 `
+                     -ErrorAction Stop | Out-Null
 }
 
 Set-DnsClientServerAddress -InterfaceIndex $iface.ifIndex -ServerAddresses 192.168.20.10
