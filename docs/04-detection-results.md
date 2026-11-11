@@ -45,7 +45,7 @@ definicji reguł w [`detection-rules/custom-wazuh-rules.xml`](../detection-rules
 
 `100110` używa `<if_matched_sid>5710</if_matched_sid>` z `<same_source_ip />`,
 więc liczy próby per źródłowy adres, nie globalnie. Ograniczenie
-`<srcip>192.168.30.0/24</srcip>` zawęża regułę do segmentu napastnika (VLAN 30) —
+`<srcip>192.168.30.0/24</srcip>` zawęża regułę do puli adresowej roli Kali —
 w laboratorium to redukuje szum, ale w produkcji byłoby błędem, bo atak
 z wewnątrz nie zostałby złapany. Świadomy kompromis, opisany tutaj, żeby nie
 przeniósł się nieświadomie dalej.

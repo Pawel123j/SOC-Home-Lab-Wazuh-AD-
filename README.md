@@ -10,19 +10,20 @@
 
 ---
 
-> ⚠️ **Skrypty w `attacks/` są ofensywne i służą wyłącznie do użytku w tym
-> laboratorium.** Symulują techniki MITRE ATT&CK (brute force, zrzut
-> poświadczeń, eksfiltracja) po to, żeby dało się sprawdzić, czy reguły
-> detekcyjne działają. Uruchamianie ich w jakiejkolwiek sieci, której nie
+> ⚠️ **Skrypty w `attacks/` symulują ofensywne techniki MITRE ATT&CK**
+> (brute force, zrzut poświadczeń, eksfiltracja) po to, żeby sprawdzić, czy reguły
+> detekcyjne działają. Uruchamiaj je wyłącznie na maszynach, które kontrolujesz.
+> Goście Vagranta mają interfejs NAT do pobierania pakietów; wspólna sieć
+> host-only nie filtruje ruchu między nimi ani nie gwarantuje braku wyjścia
+> gości do internetu. Uruchamianie skryptów w sieci, której nie
 > jesteś właścicielem lub na którą nie masz pisemnej zgody, jest nielegalne
-> w większości jurysdykcji. Lab działa w odizolowanych sieciach 192.168.x
-> i nie jest wystawiony na zewnątrz.
+> w wielu jurysdykcjach. Szczegóły i ograniczenia są w
+> [architekturze](docs/01-architecture.md).
 
 ## Weryfikacja w CI
 
-Repozytorium nie zawiera aplikacji do zbudowania — jego produktem są reguły
-detekcyjne i infrastruktura jako kod. Bramka CI sprawdza więc to, czego
-zepsucie realnie boli:
+Repozytorium zawiera reguły detekcyjne, scenariusze i infrastrukturę jako kod.
+Bramka CI sprawdza ich strukturę, spójność lokalnych łańcuchów i treść dokumentacji:
 
 | Sprawdzenie | Zakres |
 |---|---|
@@ -35,9 +36,10 @@ zepsucie realnie boli:
 python3 scripts/validate_detections.py
 ```
 
-**Czego CI nie robi:** nie uruchamia Wazuha, więc nie potwierdza, że reguła
-*strzeli* na zdarzeniu. To wymaga kontenera z managerem — procedura w
-[`HUMAN_ACTION_REQUIRED.md`](HUMAN_ACTION_REQUIRED.md).
+**Czego CI nie robi:** nie uruchamia Wazuha ani Windows Event Channel, więc nie
+potwierdza, że reguła *strzeli* na prawdziwym zdarzeniu. Fixture JSON sprawdza
+strukturę testową, nie pełny tor dekodera/agenta. Walidacja wymaga managera oraz
+gościa Windows.
 
 ## Detection catalogue
 
@@ -52,14 +54,14 @@ come from different hosts. That is documented as a known weakness with a propose
 fix, not presented as working.
 
 > **On evidence:** no document in this repository reports alert counts or TP/FP
-> rates from an attack run. The lab needs three VMs and cannot run in CI. What CI
+> rates from an attack run. The lab uses four VMs and cannot run in CI. What CI
 > does verify on every push: rule syntax, unique IDs, `if_sid` chain integrity,
 > MITRE tag validity, and that the alert levels quoted in the documentation match
 > the rule definitions.
 
 ## Project Purpose
 
-This repository documents an end-to-end SOC home lab that I built to learn and demonstrate the day-to-day work of a Tier 1 / Tier 2 SOC Analyst. The goal was not to simply install a SIEM — it was to **build the full detection lifecycle**:
+This repository documents a SOC home lab designed to demonstrate Tier 1 / Tier 2 analyst workflows. Its intended detection lifecycle is:
 
 1. Deploy a realistic enterprise-like environment (domain controller, workstation, attacker host).
 2. Onboard endpoints into a centralized log pipeline (Wazuh + Sysmon).
@@ -67,7 +69,11 @@ This repository documents an end-to-end SOC home lab that I built to learn and d
 4. Write and tune **custom detection rules** (Wazuh XML + Sigma).
 5. Triage the generated alerts and produce an **incident report** as a real analyst would.
 
-The lab runs entirely on a single workstation (16 GB RAM is enough) using VirtualBox or VMware Workstation, orchestrated with Vagrant and Ansible. Everything in this repository is reproducible — clone, `vagrant up`, run the attack scripts, and watch the alerts fire.
+Docelowe środowisko składa się z czterech VM Vagrant: managera Wazuh, kontrolera
+domeny, stacji Windows i Kali. Vagrantfile używa wspólnej sieci host-only
+`192.168.0.0/16` oraz domyślnego NAT do pobierania pakietów. To demonstracja,
+nie izolowana topologia VLAN; potrzeba około 32 GiB RAM, a pełne uruchomienie VM
+nie było walidowane w bieżącym środowisku.
 
 ---
 
@@ -75,7 +81,7 @@ The lab runs entirely on a single workstation (16 GB RAM is enough) using Virtua
 
 | Layer | Component | Version | Role |
 |---|---|---|---|
-| Hypervisor | VirtualBox / VMware Workstation | 7.0+ / 17+ | Runs all VMs locally |
+| Hypervisor | VirtualBox 7.0+ | Configured Vagrant provider; VMware has not been validated |
 | Provisioning | Vagrant + Ansible | 2.4 / 2.15 | Reproducible builds |
 | SIEM | Wazuh Manager + Indexer + Dashboard | 4.7.x | Central log analysis |
 | Server OS | Ubuntu Server | 22.04 LTS | Wazuh host |
@@ -91,35 +97,19 @@ The lab runs entirely on a single workstation (16 GB RAM is enough) using Virtua
 
 ```mermaid
 flowchart LR
-    subgraph VLAN30["VLAN 30 — Attacker Segment (192.168.30.0/24)"]
-        KALI["🐉 Kali Linux<br/>192.168.30.30<br/>Hydra · CrackMapExec · Empire"]
+    subgraph HOSTONLY["Wspólna sieć host-only 192.168.0.0/16 — bez izolacji między rolami"]
+        KALI["Kali<br/>192.168.30.30"]
+        DC["DC01 · AD DS / DNS<br/>192.168.20.10"]
+        WS["WS01 · Sysmon<br/>192.168.20.20"]
+        WAZUH["Wazuh · Manager / Indexer / Dashboard<br/>192.168.10.10"]
     end
-
-    subgraph VLAN20["VLAN 20 — Internal LAN (192.168.20.0/24)"]
-        DC["🖥️ DC01 — Win Server 2019<br/>192.168.20.10<br/>AD DS · DNS · Wazuh Agent"]
-        WS["💻 WS01 — Windows 10<br/>192.168.20.20<br/>Sysmon · Wazuh Agent"]
-    end
-
-    subgraph VLAN10["VLAN 10 — Management (192.168.10.0/24)"]
-        WAZUH["🛡️ Wazuh Server — Ubuntu 22.04<br/>192.168.10.10<br/>Manager · Indexer · Dashboard"]
-    end
-
-    KALI -- "Attacks: brute-force,<br/>lateral movement, C2" --> DC
-    KALI -- "Attacks: phishing payload,<br/>credential dump" --> WS
-
-    DC -- "Security · Sysmon · PowerShell<br/>logs over TCP/1514 (TLS)" --> WAZUH
-    WS -- "Security · Sysmon · PowerShell<br/>logs over TCP/1514 (TLS)" --> WAZUH
-
-    WAZUH -- "Decoders → Rules →<br/>Alerts (level ≥ 7)" --> ALERTS["📊 Wazuh Dashboard<br/>Analyst view · Triage queue"]
-
-    classDef attacker fill:#7f1d1d,stroke:#fca5a5,color:#fff
-    classDef victim fill:#1e3a8a,stroke:#93c5fd,color:#fff
-    classDef siem fill:#064e3b,stroke:#6ee7b7,color:#fff
-    classDef ui fill:#78350f,stroke:#fcd34d,color:#fff
-    class KALI attacker
-    class DC,WS victim
-    class WAZUH siem
-    class ALERTS ui
+    NAT["Domyślny NAT Vagranta<br/>pobieranie pakietów / możliwe wyjście"]
+    KALI -->|kontrolowane scenariusze| DC
+    KALI -->|kontrolowane scenariusze| WS
+    DC -->|logi Windows · TCP/1514| WAZUH
+    WS -->|Sysmon · TCP/1514| WAZUH
+    WAZUH --> ALERTS["Wazuh Dashboard · triage"]
+    NAT -. interfejs każdej VM .-> HOSTONLY
 ```
 
 ### How a log becomes an alert
@@ -133,14 +123,13 @@ sequenceDiagram
     participant M as Wazuh Manager
     participant D as Dashboard
 
-    A->>V: Execute payload (e.g. Mimikatz)
-    V->>S: Process creation (Event ID 1)
+    A->>V: Run an authorized simulation
+    V->>S: Write a Windows event
     S->>W: Write to Microsoft-Windows-Sysmon/Operational
-    W->>M: Forward over TLS 1514
+    W->>M: Forward over TCP 1514
     M->>M: Decoder parses event
-    M->>M: Rule engine matches custom rule 100210
-    M->>D: Alert level 12 — "Mimikatz indicators in command line"
-    D-->>A: 🚨 Analyst notified
+    M->>M: Rule engine evaluates the event
+    M->>D: Matching alert, if the decoder and rule conditions match
 ```
 
 ---
@@ -151,13 +140,13 @@ sequenceDiagram
 soc-home-lab/
 ├── README.md                            ← you are here
 ├── docs/
-│   ├── 01-architecture.md               topology, IP plan, VLAN design
+│   ├── 01-architecture.md               implemented topology and limits
 │   ├── 02-installation.md               Wazuh manager + agent install guide (PL)
 │   ├── 03-attack-scenarios.md           5 scenarios × MITRE ATT&CK
 │   ├── 04-detection-results.md          expected alerts, derived from the rules
 │   └── detections/                      9 detection scenarios, one per file
 ├── infrastructure/
-│   ├── vagrant/Vagrantfile              3 VMs orchestrated as code
+│   ├── vagrant/Vagrantfile              4 VMs orchestrated as code
 │   └── ansible/                         playbooks for agent rollout
 ├── attacks/
 │   ├── 01-brute-force-ssh.sh            T1110.001 — password guessing
@@ -166,7 +155,7 @@ soc-home-lab/
 │   ├── 04-suspicious-process.ps1        T1218 — signed binary proxy exec
 │   └── 05-data-exfiltration.py          T1041 — exfil over C2
 ├── detection-rules/
-│   ├── custom-wazuh-rules.xml           17 custom rules with comments
+│   ├── custom-wazuh-rules.xml           18 custom rules with comments
 │   └── sigma-rules/                     4 portable Sigma rules
 └── reports/
     └── incident-report-template.md      IR write-up template
@@ -177,20 +166,21 @@ soc-home-lab/
 ## Quick Start
 
 ```bash
-# 1. Bring the lab up (≈25 min the first time)
+# 1. Bring up all four VMs (first run may take considerably longer)
 cd infrastructure/vagrant
 vagrant up
 
-# 2. Provision Wazuh agents on the Windows hosts
+# 2. Configure the Windows endpoints with Ansible
 cd ../ansible
 ansible-playbook -i inventory.yml site.yml
 
 # 3. Log in to the Wazuh dashboard
 #    https://192.168.10.10
-#    user: admin   password: SecretPassword (changed during install)
+#    user: admin   password: generated in /etc/wazuh-passwords.txt on wazuh-srv
 
-# 4. Fire an attack from Kali (host: vagrant ssh kali)
-bash /vagrant/attacks/01-brute-force-ssh.sh
+# 4. Run only an authorized scenario from Kali
+vagrant ssh kali
+bash /root/attacks/01-brute-force-ssh.sh
 
 # 5. Watch the alerts appear in the dashboard
 ```
@@ -199,10 +189,10 @@ bash /vagrant/attacks/01-brute-force-ssh.sh
 
 ## What This Lab Demonstrates
 
-- **Detection Engineering** — writing decoders and rules from raw log samples, not just enabling vendor content.
+- **Detection Engineering** — tuning custom rules against event samples, not just enabling vendor content.
 - **MITRE ATT&CK literacy** — every scenario is mapped to a specific technique ID with kill-chain context.
 - **Triage & IR fundamentals** — a structured incident report template aligned with NIST SP 800-61.
-- **Infrastructure as Code** — the entire lab is reproducible from a fresh machine in under 30 minutes.
+- **Infrastructure as Code** — Vagrant and Ansible describe a reproducible local lab; setup time depends on the hypervisor and downloads.
 - **Tool fluency** — Wazuh, Sigma, Sysmon, Hydra, Ansible, PowerShell, Linux, Active Directory.
 
 ---

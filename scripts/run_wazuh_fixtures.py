@@ -36,6 +36,12 @@ def run(container, event):
         raise RuntimeError(f"logtest failed ({result.returncode}): {output}")
     ids = re.findall(r"(?:Rule id|id):\s*'(\d+)'", output)
     if not ids:
+        if "win.system.channel" in output and "name: 'json'" in output:
+            raise RuntimeError(
+                "Windows Event Channel fixture was decoded as generic JSON; "
+                "wazuh-logtest did not evaluate its Windows rules. Validate it "
+                "through a Windows agent and the real event channel instead."
+            )
         raise RuntimeError(f"No rule result in logtest output: {output}")
     return ids[-1], output
 

@@ -12,9 +12,9 @@
 #
 # CO TO ROBI:
 #   - Uruchamia Wazuh manager 4.7 z naszymi custom rules zamontowanymi
-#   - Pozwala wykonać `wazuh-logtest` z syntetycznymi zdarzeniami Sysmon w JSON
-#   - Sprawdza, czy XML rules ładują się bez błędów (sam Wazuh, nie tylko parser)
-#   - Validuje regex PCRE2, mapowanie pól, łańcuchy if_sid
+#   - Pozwala sprawdzić, czy Wazuh przyjmuje konfigurację i ładuje XML rules
+#   - Obsługuje lokalną inspekcję logtest; nie symuluje Windows Event Channel
+#   - Nie potwierdza dopasowania fixtures Sysmon ani dostarczenia alertu
 #
 # URUCHOMIENIE:
 #   docker compose up -d

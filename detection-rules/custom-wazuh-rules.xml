@@ -2,7 +2,7 @@
   ============================================================================
   SOC Home Lab — Custom Wazuh Rules
   Lokalizacja docelowa:  /var/ossec/etc/rules/local_rules.xml
-  Walidacja składni:     /var/ossec/bin/wazuh-logtest -t
+  Walidacja managera:    /var/ossec/bin/wazuh-analysisd -t
   Restart managera:      systemctl restart wazuh-manager
   ============================================================================
   Numeracja rule ID:
@@ -36,7 +36,7 @@
   -->
 
   <!--
-  Regula 100110 = SSH brute force z segmentu VLAN 30 (atakujacego).
+  Regula 100110 = SSH brute force z adresow przydzielonych roli Kali.
   Wbudowana rule 5712 strzela dla 8 nieudanych prob w 120 s z dowolnego IP.
   My zaostrzamy: 8 prob + zrodlo z 192.168.30.0/24 = atak z DMZ/internetu.
   Decoder: sshd_decoders.xml -> pole 'srcip' wypelnione przez Wazuh.
@@ -45,7 +45,7 @@
     <if_matched_sid>5710</if_matched_sid>
     <same_source_ip />
     <srcip>192.168.30.0/24</srcip>
-    <description>SSH brute force from external segment (VLAN 30): 8 failed attempts in 120s from $(srcip)</description>
+    <description>SSH brute force from Kali role address range: 8 failed attempts in 120s from $(srcip)</description>
     <mitre>
       <id>T1110.001</id>
     </mitre>
@@ -170,7 +170,7 @@
 
   <!--
   Regula 100213 = PowerShell laczy sie z zewnetrznym IP (NetworkConnect, EID 3).
-  "Zewnetrzny" w tym labie = poza VLAN 20 (192.168.20.0/24) i poza loopback.
+  Zakres jest heurystyka adresow hostow, nie granica sieci ani dowod ruchu z internetu.
   W produkcji warto uzyc CDB list (whitelist IP wewnetrznych).
   Sysmon EID 3 -> Wazuh base rule 61605.
   -->
@@ -255,7 +255,8 @@
 
   <!--
   Regula 100230 = wiele polaczen wychodzacych z jednego procesu do jednego IP
-  spoza VLAN 20/10 w krotkim czasie. Klasyczna sygnatura "burst exfil".
+  spoza adresowych zakresow WS/managera w krotkim czasie. To heurystyka roli,
+  nie segmentacja sieci ani dowod eksfiltracji do internetu.
   Prog: 20 zdarzen w 300 s (5 min).
   -->
   <rule id="100230" level="10" frequency="20" timeframe="300">

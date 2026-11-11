@@ -8,9 +8,10 @@
 #   - dc01       (Windows Server 2019) 192.168.20.10   — Active Directory DC
 #   - ws01       (Windows 10)          192.168.20.20   — stacja robocza ofiary
 #   - kali       (Kali Linux rolling)  192.168.30.30   — atakujący
+# Wspólna sieć host-only 192.168.0.0/16; role nie są izolowanymi VLAN-ami.
 #
-# Wymaga: Vagrant >= 2.4, VirtualBox >= 7.0 (lub VMware Workstation 17+).
-# Uruchomienie: `vagrant up`  (~25 min przy pierwszym pobraniu boxów)
+# Wymaga: Vagrant >= 2.4, VirtualBox >= 7.0. Inne providery nie są zweryfikowane.
+# Uruchomienie: `vagrant up`; czas zależy od pobrania boxów i instalacji.
 # ---------------------------------------------------------------------------
 
 Vagrant.configure("2") do |config|
@@ -19,8 +20,9 @@ Vagrant.configure("2") do |config|
   # Globalne ustawienia (wspólne dla wszystkich VM)
   # =========================================================================
   # Ścieżka bezwzględna oparta o lokalizację samego Vagrantfile.
-  # __FILE__ = ścieżka do Vagrantfile niezależnie od katalogu, z którego wywołano `vagrant up`.
-  REPO_ROOT = File.expand_path("../..", __FILE__)
+  # __dir__ wskazuje katalog, nie sam plik. Mount obejmuje detection-rules/ i attacks/.
+  REPO_ROOT = File.expand_path("../..", __dir__)
+  abort "Missing detection rules in #{REPO_ROOT}" unless File.file?(File.join(REPO_ROOT, "detection-rules/custom-wazuh-rules.xml"))
 
   # Synced folder: cały root repo dostępny w guestach jako /vagrant_repo
   # (na Windows guest auto-mapuje się do C:\vagrant_repo).
@@ -39,10 +41,10 @@ Vagrant.configure("2") do |config|
     srv.vm.box      = "ubuntu/jammy64"
     srv.vm.hostname = "wazuh-srv"
 
-    # Sieć: VLAN 10 (mgmt)
+    # Wspólna sieć host-only; rola managera
     srv.vm.network "private_network",
                    ip: "192.168.10.10",
-                   virtualbox__intnet: "vlan10"
+                   netmask: "255.255.0.0"
 
     srv.vm.provider "virtualbox" do |vb|
       vb.name   = "wazuh-srv"
@@ -92,14 +94,15 @@ Vagrant.configure("2") do |config|
 
     # Wgranie reguł custom z repo
     srv.vm.provision "shell", inline: <<-SHELL
-      if [ -f /vagrant_repo/detection-rules/custom-wazuh-rules.xml ]; then
-        cp /vagrant_repo/detection-rules/custom-wazuh-rules.xml \
-           /var/ossec/etc/rules/local_rules.xml
-        chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml
-        chmod 660       /var/ossec/etc/rules/local_rules.xml
-        systemctl restart wazuh-manager
-        echo "[+] Custom rules deployed."
-      fi
+      set -eu
+      test -r /vagrant_repo/detection-rules/custom-wazuh-rules.xml
+      cp /vagrant_repo/detection-rules/custom-wazuh-rules.xml \
+         /var/ossec/etc/rules/local_rules.xml
+      chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml
+      chmod 660 /var/ossec/etc/rules/local_rules.xml
+      /var/ossec/bin/wazuh-analysisd -t
+      systemctl restart wazuh-manager
+      echo "[+] Custom rules deployed."
     SHELL
   end
 
@@ -113,10 +116,10 @@ Vagrant.configure("2") do |config|
     dc.winrm.timeout   = 1800
     dc.vm.boot_timeout = 1800
 
-    # Sieć: VLAN 20 (LAN)
+    # Wspólna sieć host-only; rola Windows
     dc.vm.network "private_network",
                   ip: "192.168.20.10",
-                  virtualbox__intnet: "vlan20"
+                  netmask: "255.255.0.0"
 
     dc.vm.provider "virtualbox" do |vb|
       vb.name   = "dc01"
@@ -142,7 +145,7 @@ Vagrant.configure("2") do |config|
 
     ws.vm.network "private_network",
                   ip: "192.168.20.20",
-                  virtualbox__intnet: "vlan20"
+                  netmask: "255.255.0.0"
 
     ws.vm.provider "virtualbox" do |vb|
       vb.name   = "ws01"
@@ -164,7 +167,7 @@ Vagrant.configure("2") do |config|
 
     kali.vm.network "private_network",
                     ip: "192.168.30.30",
-                    virtualbox__intnet: "vlan30"
+                    netmask: "255.255.0.0"
 
     kali.vm.provider "virtualbox" do |vb|
       vb.name   = "kali"
@@ -186,8 +189,9 @@ Vagrant.configure("2") do |config|
 
       # Kopiuj skrypty ataków
       mkdir -p /root/attacks
-      cp -r /vagrant_repo/attacks/* /root/attacks/ 2>/dev/null || true
-      chmod +x /root/attacks/*.sh 2>/dev/null || true
+      test -d /vagrant_repo/attacks
+      cp -r /vagrant_repo/attacks/. /root/attacks/
+      chmod +x /root/attacks/*.sh
 
       echo "[+] Kali gotowe. Skrypty w /root/attacks/"
     SHELL

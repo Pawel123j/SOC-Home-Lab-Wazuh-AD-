@@ -1,166 +1,78 @@
 # 01 — Architektura laboratorium
 
-Dokument opisuje fizyczną i logiczną topologię SOC Home Lab, plan adresacji IP, podział na VLAN-y oraz przepływ logów. Jest punktem wyjścia dla dokumentu [02-installation.md](02-installation.md).
+Ten dokument opisuje topologię faktycznie skonfigurowaną w
+[`infrastructure/vagrant/Vagrantfile`](../infrastructure/vagrant/Vagrantfile).
+Adresy `.10`, `.20` i `.30` oznaczają role hostów, a nie osobne VLAN-y.
 
----
+## Założenia
 
-## 1. Założenia projektowe
-
-| Obszar | Założenie |
+| Obszar | Konfiguracja |
 |---|---|
-| **Cel** | Demonstracja umiejętności analityka SOC: detekcja, triage, IR |
-| **Skala** | 4 maszyny wirtualne na jednej stacji roboczej (16 GB RAM, SSD 100 GB wolnego miejsca) |
-| **Izolacja** | Trzy oddzielne sieci wewnętrzne (host-only) — brak dostępu z internetu do segmentu ofiar |
-| **Reprodukowalność** | Całe środowisko stawia się komendą `vagrant up`, agenci wdrażani Ansible |
-| **Realizm** | Topologia naśladuje typową małą firmę: kontroler domeny, stacja robocza, segment zarządzania, segment napastnika |
+| Cel | Ćwiczenie detekcji, triage i analizy incydentów na syntetycznych zdarzeniach |
+| Hypervisor | Vagrant z VirtualBox; konfiguracja VMware wymaga osobnej weryfikacji |
+| Goście | 4 maszyny: Wazuh, kontroler domeny, stacja Windows i Kali |
+| Sieć ról | Jedna wspólna sieć host-only `192.168.0.0/16` |
+| Dostęp do pakietów | Domyślny interfejs NAT Vagranta jest wykorzystywany podczas instalacji i może zapewniać gościom wyjście do internetu |
+| Ograniczenie | Brak routera, zapory między rolami i izolacji L2/VLAN w sieci host-only |
 
----
+## Topologia
 
-## 2. Topologia logiczna
-
-```
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                    SOC HOME LAB                         │
-                  └─────────────────────────────────────────────────────────┘
-
-  VLAN 10 — MGMT (192.168.10.0/24)   VLAN 20 — LAN (192.168.20.0/24)   VLAN 30 — ATTACKER (192.168.30.0/24)
-  ┌─────────────────────────┐         ┌─────────────────────────┐         ┌─────────────────────────┐
-  │                         │         │                         │         │                         │
-  │   ┌─────────────────┐   │         │   ┌─────────────────┐   │         │   ┌─────────────────┐   │
-  │   │  WAZUH-SRV      │   │         │   │  DC01           │   │         │   │  KALI           │   │
-  │   │  Ubuntu 22.04   │   │         │   │  Win Server 2019│   │         │   │  Kali 2024.x    │   │
-  │   │  192.168.10.10  │◄──┼─────────┼───┤  192.168.20.10  │   │         │   │  192.168.30.30  │   │
-  │   │                 │   │         │   │  AD DS / DNS    │   │         │   │                 │   │
-  │   │  Manager 4.7    │   │         │   └─────────────────┘   │         │   └─────────────────┘   │
-  │   │  Indexer        │   │         │                         │         │            │            │
-  │   │  Dashboard      │◄──┼─────────┼───┌─────────────────┐   │         │            │            │
-  │   │                 │   │         │   │  WS01           │   │         │            │            │
-  │   └─────────────────┘   │         │   │  Windows 10 22H2│   │◄────────┼────────────┘            │
-  │                         │         │   │  192.168.20.20  │   │  ataki  │                         │
-  │                         │         │   │  Sysmon + Agent │   │         │                         │
-  │                         │         │   └─────────────────┘   │         │                         │
-  └─────────────────────────┘         └─────────────────────────┘         └─────────────────────────┘
-            ▲                                                                          ▲
-            │ log flow (1514/TCP TLS)                                                  │ ataki
-            └──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    HOST[Host z VirtualBox] --- NET[Host-only 192.168.0.0/16]
+    NET --- SIEM[Wazuh Manager<br/>192.168.10.10]
+    NET --- DC[DC01<br/>192.168.20.10]
+    NET --- WS[WS01<br/>192.168.20.20]
+    NET --- KALI[Kali<br/>192.168.30.30]
+    NAT[Interfejs NAT Vagranta<br/>pobieranie pakietów / możliwe wyjście] -. każda VM .- SIEM
+    NAT -. każda VM .- DC
+    NAT -. każda VM .- WS
+    NAT -. każda VM .- KALI
+    DC -->|Windows events| SIEM
+    WS -->|Sysmon events| SIEM
+    KALI -->|kontrolowane scenariusze| DC
+    KALI -->|kontrolowane scenariusze| WS
 ```
 
-> **Uwaga implementacyjna:** w środowisku domowym opartym o VirtualBox VLAN-y nie istnieją w sensie 802.1Q — są symulowane przez trzy odrębne sieci typu `host-only` (`vboxnet0`, `vboxnet1`, `vboxnet2`). W dokumentacji używam słowa "VLAN" dla zgodności z nomenklaturą produkcyjną.
+Host-only pozwala hostowi i gościom komunikować się lokalnie. Nie filtruje ruchu
+między Kali, Windows i Wazuhem. Interfejs NAT nie jest zaporą aplikacyjną i może
+zapewniać ruch wychodzący. Używaj skryptów z `attacks/` wyłącznie w środowisku,
+które kontrolujesz, i sprawdź routing hostów przed uruchomieniem scenariusza.
 
----
+## Adresacja i usługi
 
-## 3. Plan adresacji IP
-
-### VLAN 10 — Management (192.168.10.0/24)
-
-Segment serwerowy, oddzielony od stacji końcowych. W produkcji byłby chroniony jump-hostem; w labie dostęp z hosta jest bezpośredni dla wygody.
-
-| Host | IP | OS | Rola | Otwarte porty |
-|---|---|---|---|---|
-| `wazuh-srv` | 192.168.10.10 | Ubuntu 22.04 LTS | Wazuh Manager + Indexer + Dashboard | 443 (UI), 1514 (agenci TLS), 1515 (enrollment), 55000 (API) |
-| Brama (gateway) | 192.168.10.1 | — | Wirtualna brama VirtualBox | — |
-
-### VLAN 20 — Internal LAN (192.168.20.0/24)
-
-Segment "biurowy" — wszystko, co byłoby w prawdziwej organizacji za firewallem.
-
-| Host | IP | OS | Rola | Otwarte porty |
-|---|---|---|---|---|
-| `dc01` | 192.168.20.10 | Win Server 2019 | AD DS, DNS, KDC | 53, 88, 135, 389, 445, 464, 636, 3268, 3269, 9389 |
-| `ws01` | 192.168.20.20 | Windows 10 Pro 22H2 | Stacja robocza domenowa | 135, 139, 445, 3389 (RDP — celowo otwarty dla scenariusza brute-force) |
-| Brama | 192.168.20.1 | — | — | — |
-
-DNS dla całego segmentu wskazuje na DC01 (192.168.20.10). Domena AD: `soclab.local`.
-
-### VLAN 30 — Attacker (192.168.30.0/24)
-
-Segment napastnika. W normalnym środowisku byłby zewnętrzny (internet); tutaj wymuszamy routing przez bramę między 30 a 20.
-
-| Host | IP | OS | Rola |
+| Host | IP host-only | Rola | Główne porty |
 |---|---|---|---|
-| `kali` | 192.168.30.30 | Kali Linux 2024.x | Stacja atakującego — Hydra, CrackMapExec, Mimikatz (port), Empire/Starkiller |
+| `wazuh-srv` | `192.168.10.10` | Wazuh Manager, Indexer, Dashboard | 443, 1514/TCP, 1515/TCP, 55000 |
+| `dc01` | `192.168.20.10` | Windows Server 2019, AD DS, DNS | DNS/AD; szczegóły zależą od profilu systemu |
+| `ws01` | `192.168.20.20` | Windows 10, domenowa stacja robocza, Sysmon | RDP/SMB tylko jeśli włączone przez konfigurację gościa |
+| `kali` | `192.168.30.30` | Kali Linux, narzędzia do kontrolowanych testów | zależne od uruchomionego scenariusza |
 
-### Routing między segmentami
+Windows używa adresów DNS kontrolera domeny `192.168.20.10`. Manager i hosty
+Windows komunikują się przez wspólną sieć `/16`; nie istnieją tu osobne trasy
+VLAN ani ograniczenia „Kali → Wazuh”. Dokładne reguły gości i ruch do hosta
+zależą też od hypervisora oraz zapory systemowej.
 
-| Z | Do | Dozwolone | Powód |
-|---|---|---|---|
-| VLAN 30 → VLAN 20 | TCP/22, 445, 3389, 5985, 80, 443 | Tak | Symulacja perimetru z ekspozycją RDP/SMB (typowy błąd konfiguracji) |
-| VLAN 20 → VLAN 10 | TCP/1514, 1515, 55000 | Tak | Logi i enrollment agentów |
-| VLAN 10 → VLAN 20 | TCP/22, 5985 | Tak | Zarządzanie (Ansible) |
-| VLAN 30 → VLAN 10 | ❌ | Nie | Wazuh nie powinien być widoczny dla napastnika |
+## Przepływ telemetrii
 
-W labie egzekwowane przez VirtualBox NAT + reguły `iptables` na maszynie hostującej (skrypt `infrastructure/vagrant/firewall.sh`).
+1. Sysmon i dzienniki Windows tworzą zdarzenia na `dc01` i `ws01`.
+2. Agent Wazuh przekazuje telemetrię do `wazuh-srv` na TCP/1514.
+3. Dekodery i reguły Wazuha klasyfikują zdarzenie; własne reguły są w
+   `detection-rules/custom-wazuh-rules.xml`.
+4. Analityk przegląda alerty w Dashboardzie i dokumentuje triage.
 
----
+Dokumenty w `docs/detections/` opisują założenia, mapowanie MITRE ATT&CK,
+fałszywe alarmy i ograniczenia poszczególnych reguł. Walidacja XML i fixture
+JSON nie zastępują testu prawdziwego Windows Event Channel, agenta i managera.
 
-## 4. Specyfikacja sprzętowa VM
+## Zasoby i ograniczenia
 
-| VM | vCPU | RAM | Dysk | Adapter sieciowy |
-|---|---|---|---|---|
-| `wazuh-srv` | 4 | 6 GB | 50 GB (dynamic) | vboxnet0 (VLAN 10) + NAT (do paczek apt) |
-| `dc01` | 2 | 3 GB | 40 GB (dynamic) | vboxnet1 (VLAN 20) |
-| `ws01` | 2 | 3 GB | 40 GB (dynamic) | vboxnet1 (VLAN 20) |
-| `kali` | 2 | 3 GB | 30 GB (dynamic) | vboxnet2 (VLAN 30) |
+Vagrantfile przydziela 6 GiB Wazuhowi oraz po 3 GiB każdej z trzech pozostałych
+maszyn. Zaplanuj co najmniej 32 GiB RAM hosta, miejsce na boxy/obrazy oraz
+hypervisor z włączoną wirtualizacją sprzętową. Na słabszym komputerze uruchamiaj
+maszyny etapami. Czas pierwszego uruchomienia zależy od pobierania boxów,
+Windows Update i instalacji Wazuha; nie jest gwarantowane 25 minut.
 
-**Łącznie: 10 vCPU, 15 GB RAM, ~160 GB dysku.** Działa na laptopie z 16 GB RAM, ale Wazuh Indexer jest wrażliwy na RAM — przy 8 GB host-RAM należy ograniczyć JVM heap w `/etc/wazuh-indexer/jvm.options` do 1g.
-
----
-
-## 5. Przepływ logów
-
-```
-┌──────────────────────┐    ┌────────────────────┐    ┌──────────────────────────┐
-│ Źródła na endpointach│───▶│  Wazuh Agent       │───▶│  Wazuh Manager           │
-│                      │    │  (na DC01, WS01)   │    │                          │
-│ • Security.evtx      │    │                    │    │  1. Decoders             │
-│ • System.evtx        │    │  • Lokalne reguły  │    │     (parse JSON/XML)     │
-│ • Sysmon/Operational │    │  • Bufor lokalny   │    │  2. Rules                │
-│ • PowerShell/Operat. │    │  • TLS 1.2+        │    │     (level, MITRE tag)   │
-│ • Defender Operat.   │    │  • Compression     │    │  3. Alert engine         │
-│ • IIS access log     │    │                    │    │     (level ≥ 7 → alert)  │
-└──────────────────────┘    └─────────┬──────────┘    └──────────────┬───────────┘
-                                      │                              │
-                                  1514/TCP TLS              ┌────────▼──────────┐
-                                                            │  Wazuh Indexer    │
-                                                            │  (OpenSearch)     │
-                                                            └────────┬──────────┘
-                                                                     │
-                                                            ┌────────▼──────────┐
-                                                            │  Wazuh Dashboard  │
-                                                            │  (analityk SOC)   │
-                                                            └───────────────────┘
-```
-
-### Czas reakcji (orientacyjny, w labie)
-
-| Etap | Czas |
-|---|---|
-| Wygenerowanie zdarzenia na endpoint | t = 0 |
-| Sysmon zapisuje do EventLog | t + 50 ms |
-| Wazuh agent wysyła do managera | t + 1–2 s |
-| Manager przetwarza, dopasowuje regułę | t + 2 s |
-| Alert widoczny w dashboardzie | t + 3–5 s |
-
-W produkcji dochodzi opóźnienie indeksacji (5–30 s) i propagacja do SOAR.
-
----
-
-## 6. Konfiguracja czasu i nazewnictwa
-
-- **Strefa czasowa:** wszystkie maszyny ustawione na `Europe/Warsaw`. To **kluczowe** — korelacja zdarzeń wymaga zgodnego czasu. Wazuh Manager pełni rolę NTP-klienta `pool.ntp.org`, pozostałe hosty synchronizują się z DC01.
-- **Nazwy hostów:** `wazuh-srv`, `dc01`, `ws01`, `kali` (krótko, jednoznacznie).
-- **FQDN w domenie:** `dc01.soclab.local`, `ws01.soclab.local`. `wazuh-srv` jest poza domeną (osobny segment).
-
----
-
-## 7. Decyzje projektowe (i dlaczego)
-
-| Decyzja | Alternatywa | Dlaczego tak |
-|---|---|---|
-| Trzy segmenty zamiast jednego | Wszystko w jednej sieci | Realizm — produkcja ma minimum DMZ / LAN / Mgmt |
-| Wazuh all-in-one (manager+indexer+dashboard) | Cluster | Lab — w prod oddzielne nody dla HA |
-| Sysmon na endpointach | Sam Windows Event Log | Bez Sysmona nie wykryjemy 80% technik T1059, T1003, T1218 |
-| Domena `soclab.local` (TLD `.local`) | `.lab`, `.test`, `corp.com` | `.local` nadal działa, choć formalnie kolizja z mDNS — celowo, bo wielu klientów to ma w produkcji i to też trzeba umieć obsłużyć |
-| Brute-force RDP otwarty z VLAN 30 | Zamknięty RDP | Świadomy błąd konfiguracji do detekcji T1110 |
-
-Następny krok: [02-installation.md](02-installation.md) — instalacja krok po kroku.
+To laboratorium edukacyjne: pojedynczy manager i indexer nie zapewniają HA,
+retencji ani segmentacji sieci produkcyjnej. Szczegółowe polecenia instalacji
+znajdują się w [02-installation.md](02-installation.md).
