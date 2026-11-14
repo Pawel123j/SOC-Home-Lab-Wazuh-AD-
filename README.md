@@ -172,6 +172,10 @@ vagrant up
 
 # 2. Configure the Windows endpoints with Ansible
 cd ../ansible
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-controller.txt
+ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory.yml site.yml
 
 # 3. Log in to the Wazuh dashboard

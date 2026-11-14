@@ -5,9 +5,15 @@ Playbook do automatycznego wdrożenia agentów Wazuh na hostach z labu po tym, j
 ## Wymagania na maszynie sterującej
 
 ```bash
-# Linux/macOS lub WSL na Windows
-python3 -m pip install ansible pywinrm requests
-ansible-galaxy collection install ansible.windows
+# Linux/macOS lub WSL na Windows, Python 3.11+
+cd infrastructure/ansible
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-controller.txt
+ansible-galaxy collection install -r requirements.yml
+
+# Sprawdzenie składni i modułów bez połączenia z hostami:
+ansible-playbook -i inventory.yml site.yml --syntax-check
 ```
 
 ## Uruchomienie
@@ -15,8 +21,9 @@ ansible-galaxy collection install ansible.windows
 ```bash
 cd infrastructure/ansible
 
-# 1. Sprawdź łączność
-ansible -i inventory.yml all -m ping
+# 1. Sprawdź łączność (Windows wymaga win_ping)
+ansible -i inventory.yml wazuh_servers:linux_agents -m ansible.builtin.ping
+ansible -i inventory.yml windows_agents -m ansible.windows.win_ping
 
 # 2. Wdróż agentów
 ansible-playbook -i inventory.yml site.yml
@@ -37,7 +44,9 @@ ansible/
 ├── group_vars/
 │   └── all.yml              ← wersja agenta, IP managera
 └── roles/
-    ├── wazuh-agent-windows/tasks/main.yml
+    ├── wazuh-agent-windows/
+    │   ├── tasks/main.yml
+    │   └── handlers/main.yml
     └── wazuh-agent-linux/tasks/main.yml
 ```
 

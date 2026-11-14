@@ -42,7 +42,7 @@ Zainstaluj:
 |---|---|---|
 | VirtualBox | 7.0+ (skonfigurowany provider) | `VBoxManage --version` |
 | Vagrant | 2.4+ | `vagrant --version` |
-| Ansible | 2.15+ (na hoście Linux/macOS lub WSL na Windows) | `ansible --version` |
+| Ansible | ansible-core z `requirements-controller.txt`, Python 3.11+ (Linux/macOS lub WSL) | `ansible --version` |
 | Git | dowolny | `git --version` |
 
 W BIOS-ie: **VT-x / AMD-V** włączone. Bez tego maszyny 64-bit nie wystartują.
@@ -78,7 +78,22 @@ vagrant status
 vagrant ssh wazuh-srv -c "ping -c 2 192.168.20.10"
 ```
 
-> **Tip:** jeśli `vagrant up` zawiesza się na `Waiting for SSH...` przy Windows, przyczyna to zazwyczaj WinRM. Sprawdź `vagrant winrm-config dc01` i ewentualnie zwiększ `config.winrm.timeout`.
+Vagrant uruchamia DC01 w etapach `dc-promote` → restart → `dc-configure`.
+Drugi etap czeka na AD DS/ADWS i tworzy konta labowe. WS01 wykonuje
+`ws-join` → restart → `ws-configure`; dopiero po sprawdzeniu domeny i kanału
+zaufania instaluje Sysmona oraz włącza logowanie. Restart obsługuje Vagrant,
+więc provisioning ma kontynuację po ponownym połączeniu WinRM. Skrypty kończą
+się błędem, gdy domena nie jest gotowa, zamiast zgłaszać częściowy sukces.
+
+Po przerwaniu wykonaj `vagrant provision dc01`, a następnie
+`vagrant provision ws01`. Powtórzenie przechodzi przez te same dwa etapy i
+restart. WS01 dołącza przy użyciu utworzonego przez DC01 konta
+`SOCLAB\akowalska`; hasło DSRM z promocji nie ustawia hasła Administratora.
+Nie uruchamiaj WS01 przed zakończeniem konfiguracji DC01 ani przez
+`vagrant up --parallel`. Szczegóły pozostałej walidacji na Windows znajdują się
+w [HUMAN_ACTION_REQUIRED.md](../HUMAN_ACTION_REQUIRED.md).
+
+> **Tip:** jeśli `vagrant up` czeka przy Windows, sprawdź WinRM: `vagrant winrm-config dc01` i ewentualnie zwiększ `config.winrm.timeout`.
 
 ---
 
@@ -322,12 +337,17 @@ W repo: `infrastructure/ansible/`. Na hoście (lub w WSL):
 
 ```bash
 cd infrastructure/ansible
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-controller.txt
+ansible-galaxy collection install -r requirements.yml
 
 # Sprawdź inwentarz
 cat inventory.yml
 
 # Test łączności
-ansible -i inventory.yml all -m ping
+ansible -i inventory.yml wazuh_servers:linux_agents -m ansible.builtin.ping
+ansible -i inventory.yml windows_agents -m ansible.windows.win_ping
 
 # Wdrożenie pełne (manager już stoi, doinstalowanie agentów)
 ansible-playbook -i inventory.yml site.yml
