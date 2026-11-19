@@ -429,3 +429,18 @@ sudo /var/ossec/bin/agent_control -l   # wszyscy powinni być Active
 ---
 
 Kolejny krok: [03-attack-scenarios.md](03-attack-scenarios.md) — 5 scenariuszy ataków z mapowaniem MITRE.
+
+## Hasła laboratorium (2026-11)
+
+Domyślne hasła kont laboratoryjnych są celowo jawne — laboratorium działa w izolowanej sieci
+`private_network` i służy do symulacji ataków. Przy dłuższym użyciu albo w sieci dostępnej dla
+innych osób nadpisz je zmiennymi środowiskowymi hosta przed `vagrant up` / `vagrant provision`:
+
+| Zmienna | Konto |
+|---|---|
+| `LAB_DSRM_PASSWORD` | tryb przywracania usług katalogowych (DC01) |
+| `LAB_AKOWALSKA_PASSWORD` | `SOCLAB\akowalska` (admin domeny, używany też do dołączenia WS01) |
+| `LAB_JNOWAK_PASSWORD`, `LAB_SVC_BACKUP_PASSWORD` | konta użytkowników |
+| `LAB_WINRM_PASSWORD` | WinRM dla Ansible (inwentarz) |
+
+Vagrant przekazuje do provisionerów Windows wyłącznie zmienne z prefiksem `LAB_`.

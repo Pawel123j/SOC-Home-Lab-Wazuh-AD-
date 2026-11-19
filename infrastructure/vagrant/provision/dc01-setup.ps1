@@ -15,6 +15,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# -----------------------------------------------------------------------------
+# Hasła laboratorium (SOC-01). Domyślne wartości są CELOWO słabe i jawne — to izolowane
+# laboratorium (Vagrant private_network) do symulacji ataków. Każdą można nadpisać
+# zmienną środowiskową hosta (przekazywaną przez Vagrantfile), np. przy dłuższym użyciu
+# albo w sieci, do której mają dostęp inne osoby.
+# -----------------------------------------------------------------------------
+function Get-LabSecret([string]$Name, [string]$LabDefault) {
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-Warning "[!] $Name nie ustawione — używam jawnego hasła laboratoryjnego (tylko izolowana sieć)."
+        return $LabDefault
+    }
+    return $value
+}
 Write-Host "[+] DC01 provisioning — start"
 
 # -----------------------------------------------------------------------------
@@ -71,7 +86,7 @@ if ($Phase -eq 'Promote') {
     # DomainRole jest lokalny; chwilowa niedostępność AD nie oznacza nowej domeny.
     if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) {
         Write-Host "[+] Promuję serwer na DC w nowej domenie soclab.local"
-        $securePass = ConvertTo-SecureString "P@ssw0rd!Lab" -AsPlainText -Force
+        $securePass = ConvertTo-SecureString (Get-LabSecret "LAB_DSRM_PASSWORD" "P@ssw0rd!Lab") -AsPlainText -Force
 
         Install-ADDSForest `
             -DomainName "soclab.local" `
@@ -116,9 +131,9 @@ if (-not (Get-ADOrganizationalUnit -Filter "Name -eq 'LabUsers'" -ErrorAction Si
 }
 
 $labUsers = @(
-    @{ Sam = "akowalska"; Name = "Anna Kowalska"; Pass = "Wiosna2024!"; Admin = $true  },
-    @{ Sam = "jnowak";    Name = "Jan Nowak";     Pass = "Lato2024!";   Admin = $false },
-    @{ Sam = "svc-backup"; Name = "Backup Service"; Pass = "B@ckup!2024Lab"; Admin = $false }
+    @{ Sam = "akowalska"; Name = "Anna Kowalska"; Pass = (Get-LabSecret "LAB_AKOWALSKA_PASSWORD" "Wiosna2024!"); Admin = $true  },
+    @{ Sam = "jnowak";    Name = "Jan Nowak";     Pass = (Get-LabSecret "LAB_JNOWAK_PASSWORD" "Lato2024!");   Admin = $false },
+    @{ Sam = "svc-backup"; Name = "Backup Service"; Pass = (Get-LabSecret "LAB_SVC_BACKUP_PASSWORD" "B@ckup!2024Lab"); Admin = $false }
 )
 
 foreach ($u in $labUsers) {

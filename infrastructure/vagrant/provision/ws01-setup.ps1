@@ -15,6 +15,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# SOC-01: to samo hasło co przy tworzeniu konta na DC01 (LAB_AKOWALSKA_PASSWORD, domyślnie jawne hasło laboratoryjne).
+function Get-LabSecret([string]$Name, [string]$LabDefault) {
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) { return $LabDefault }
+    return $value
+}
 Write-Host "[+] WS01 provisioning — start"
 
 # -----------------------------------------------------------------------------
@@ -84,7 +91,7 @@ if ($Phase -eq 'Join') {
     if (-not $computer.PartOfDomain) {
         Write-Host "[+] Dołączam do domeny soclab.local"
         $cred = New-Object System.Management.Automation.PSCredential `
-                    ("SOCLAB\akowalska", (ConvertTo-SecureString "Wiosna2024!" -AsPlainText -Force))
+                    ("SOCLAB\akowalska", (ConvertTo-SecureString (Get-LabSecret "LAB_AKOWALSKA_PASSWORD" "Wiosna2024!") -AsPlainText -Force))
         Add-Computer -DomainName "soclab.local" -Credential $cred -Force
     }
     Write-Host '[+] Etap Join zakończony. Vagrant wykona restart przed Configure.'
