@@ -23,9 +23,11 @@ jobs:
     name: Reguły Wazuh, Sigma i zdarzenia testowe
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -49,14 +51,30 @@ jobs:
     name: Infrastruktura jako kod
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Instalacja zależności
-        run: pip install "pyyaml>=6,<7"
+        run: pip install -r infrastructure/ansible/requirements-controller.txt "pyyaml>=6,<7"
+
+      - name: Kolekcje Ansible
+        run: ansible-galaxy collection install -r infrastructure/ansible/requirements.yml
+
+      - name: Składnia playbooka i moduły Ansible
+        working-directory: infrastructure/ansible
+        run: ansible-playbook -i inventory.yml site.yml --syntax-check
+
+      - name: Składnia Vagrantfile
+        run: ruby -c infrastructure/vagrant/Vagrantfile
+
+      - name: Składnia PowerShell i przepływ etapów Windows (mocki)
+        shell: pwsh
+        run: ./tests/test_windows_provisioning.ps1
 
       # Literówka w playbooku Ansible albo w compose ujawnia się dziś dopiero
       # po 25 minutach stawiania labu. Parsowanie kosztuje sekundę.
@@ -95,7 +113,9 @@ jobs:
     name: Walidacja harnessu Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # Harness z Wazuh managerem jest lekką alternatywą dla pełnego labu na
       # VM-ach. Sprawdzamy, że plik compose jest poprawny — postawienie samego

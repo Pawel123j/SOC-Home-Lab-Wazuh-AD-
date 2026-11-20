@@ -4,7 +4,24 @@
 # konfiguruje logging PowerShell.
 # =============================================================================
 
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Join', 'Configure')]
+    [string]$Phase,
+    [ValidateRange(1, 120)]
+    [int]$ReadyAttempts = 60,
+    [ValidateRange(0, 60)]
+    [int]$ReadyDelaySeconds = 10
+)
+
 $ErrorActionPreference = "Stop"
+
+# SOC-01: to samo hasło co przy tworzeniu konta na DC01 (LAB_AKOWALSKA_PASSWORD, domyślnie jawne hasło laboratoryjne).
+function Get-LabSecret([string]$Name, [string]$LabDefault) {
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) { return $LabDefault }
+    return $value
+}
 Write-Host "[+] WS01 provisioning — start"
 
 # -----------------------------------------------------------------------------
@@ -43,36 +60,62 @@ Set-DnsClientServerAddress -InterfaceIndex $iface.ifIndex -ServerAddresses 192.1
 Set-TimeZone -Id "Central European Standard Time"
 
 # -----------------------------------------------------------------------------
-# 2. Poczekaj aż DC01 odpowiada na DNS soclab.local
+# 2. Etap Join: poczekaj na rekord usługi AD i LDAP, nie tylko rekord A hosta
 # -----------------------------------------------------------------------------
-$dcReady = $false
-for ($i = 0; $i -lt 30; $i++) {
-    try {
-        Resolve-DnsName "dc01.soclab.local" -Server 192.168.20.10 -ErrorAction Stop | Out-Null
-        $dcReady = $true
-        break
-    } catch {
-        Write-Host "[..] DC01 jeszcze nie gotowy ($i/30) — czekam 10 s"
-        Start-Sleep -Seconds 10
+if ($Phase -eq 'Join') {
+    $dcReady = $false
+    for ($i = 0; $i -lt $ReadyAttempts; $i++) {
+        try {
+            Resolve-DnsName '_ldap._tcp.dc._msdcs.soclab.local' -Type SRV -Server 192.168.20.10 -ErrorAction Stop | Out-Null
+            if (-not (Test-NetConnection -ComputerName 192.168.20.10 -Port 389 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
+                throw 'LDAP nie jest jeszcze dostępny.'
+            }
+            $dcReady = $true
+            break
+        } catch {
+            Write-Host "[..] DC01 jeszcze nie gotowy ($($i + 1)/$ReadyAttempts)"
+            if ($i -lt ($ReadyAttempts - 1)) { Start-Sleep -Seconds $ReadyDelaySeconds }
+        }
     }
-}
 
-if (-not $dcReady) {
-    Write-Warning "[!] DC01 nie odpowiada — pomijam dołączenie do domeny. Uruchom 'vagrant provision ws01' ponownie."
-} else {
+    if (-not $dcReady) {
+        throw "DC01 nie jest gotowy. Dokończ vagrant provision dc01, potem ponów vagrant provision ws01."
+    }
     # -------------------------------------------------------------------------
     # 3. Dołączenie do domeny (idempotentne)
     # -------------------------------------------------------------------------
-    $currentDomain = (Get-CimInstance Win32_ComputerSystem).Domain
-    if ($currentDomain -ne "soclab.local") {
+    $computer = Get-CimInstance Win32_ComputerSystem
+    if ($computer.PartOfDomain -and $computer.Domain -ne 'soclab.local') {
+        throw "WS01 należy do innej domeny: $($computer.Domain)."
+    }
+    if (-not $computer.PartOfDomain) {
         Write-Host "[+] Dołączam do domeny soclab.local"
         $cred = New-Object System.Management.Automation.PSCredential `
-                    ("SOCLAB\Administrator", (ConvertTo-SecureString "P@ssw0rd!Lab" -AsPlainText -Force))
+                    ("SOCLAB\akowalska", (ConvertTo-SecureString (Get-LabSecret "LAB_AKOWALSKA_PASSWORD" "Wiosna2024!") -AsPlainText -Force))
         Add-Computer -DomainName "soclab.local" -Credential $cred -Force
-        Write-Host "[!] Domena dołączona. Restart wymagany."
-        Restart-Computer -Force
-        exit 0
     }
+    Write-Host '[+] Etap Join zakończony. Vagrant wykona restart przed Configure.'
+    return
+}
+
+$computer = Get-CimInstance Win32_ComputerSystem
+if (-not $computer.PartOfDomain -or $computer.Domain -ne 'soclab.local') {
+    throw 'WS01 nie jest w soclab.local. Uruchom vagrant provision ws01 (Join + reboot + Configure).'
+}
+$channelReady = $false
+for ($i = 0; $i -lt $ReadyAttempts; $i++) {
+    try {
+        if (Test-ComputerSecureChannel -Server 'dc01.soclab.local' -ErrorAction Stop) {
+            $channelReady = $true
+            break
+        }
+    } catch {
+        Write-Host '[..] Kanał zaufania jeszcze nie jest gotowy po restarcie.'
+    }
+    if ($i -lt ($ReadyAttempts - 1)) { Start-Sleep -Seconds $ReadyDelaySeconds }
+}
+if (-not $channelReady) {
+    throw 'Kanał zaufania WS01 do domeny nie działa. Sprawdź DC01 przed konfiguracją logowania.'
 }
 
 # -----------------------------------------------------------------------------
@@ -86,7 +129,9 @@ if (-not (Test-Path "$sysmonPath\Sysmon64.exe")) {
     Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" `
                       -OutFile "$env:TEMP\Sysmon.zip" -UseBasicParsing
     Expand-Archive "$env:TEMP\Sysmon.zip" -DestinationPath $sysmonPath -Force
-
+}
+# Nieudane pobranie konfiguracji można bezpiecznie ponowić po rozpakowaniu EXE.
+if (-not (Test-Path "$sysmonPath\sysmonconfig.xml")) {
     Invoke-WebRequest -Uri "https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml" `
                       -OutFile "$sysmonPath\sysmonconfig.xml" -UseBasicParsing
 }
@@ -98,6 +143,7 @@ if (-not (Get-Service Sysmon64 -ErrorAction SilentlyContinue)) {
     Write-Host "[=] Sysmon już zainstalowany — aktualizuję konfig"
     & "$sysmonPath\Sysmon64.exe" -c "$sysmonPath\sysmonconfig.xml" | Out-Null
 }
+if ($LASTEXITCODE -ne 0) { throw "Sysmon zakończył się kodem $LASTEXITCODE." }
 
 # -----------------------------------------------------------------------------
 # 5. PowerShell — zaawansowane logowanie

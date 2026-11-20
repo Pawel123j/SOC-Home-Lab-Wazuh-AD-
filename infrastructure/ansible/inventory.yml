@@ -50,7 +50,7 @@ all:
         # certyfikatu i trzymaj poświadczenia w Ansible Vault
         # (`ansible-vault encrypt_string`), a nie w inwentarzu.
         ansible_user: vagrant
-        ansible_password: vagrant
+        ansible_password: "{{ lookup('ansible.builtin.env', 'LAB_WINRM_PASSWORD') | default('vagrant', true) }}"
         ansible_connection: winrm
         ansible_winrm_transport: basic
         ansible_winrm_server_cert_validation: ignore

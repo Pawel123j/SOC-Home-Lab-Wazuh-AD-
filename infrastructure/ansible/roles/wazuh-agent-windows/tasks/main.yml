@@ -42,20 +42,17 @@
     state: started
 
 - name: "Dodaj dodatkowe lokalizacje logów do ossec.conf"
-  ansible.windows.win_lineinfile:
+  community.windows.win_lineinfile:
     path: 'C:\Program Files (x86)\ossec-agent\ossec.conf'
     insertbefore: '</ossec_config>'
-    line: |2
-        <localfile>
-          <location>Microsoft-Windows-Sysmon/Operational</location>
-          <log_format>eventchannel</log_format>
-        </localfile>
-        <localfile>
-          <location>Microsoft-Windows-PowerShell/Operational</location>
-          <log_format>eventchannel</log_format>
-        </localfile>
+    # win_lineinfile compares individual lines: a multiline block would be
+    # appended again on every provision, duplicating event subscriptions.
+    line: '  <localfile><location>{{ item }}</location><log_format>eventchannel</log_format></localfile>'
     state: present
     backup: true
+  loop:
+    - Microsoft-Windows-Sysmon/Operational
+    - Microsoft-Windows-PowerShell/Operational
   notify: restart_wazuh_agent
 
 - name: "Sprawdź, czy agent komunikuje się z managerem"
@@ -63,10 +60,3 @@
   register: auth_result
   changed_when: "'Valid key created' in auth_result.stdout"
   failed_when: false
-
-# Handler:
-- name: "restart_wazuh_agent"
-  ansible.windows.win_service:
-    name: WazuhSvc
-    state: restarted
-  listen: restart_wazuh_agent

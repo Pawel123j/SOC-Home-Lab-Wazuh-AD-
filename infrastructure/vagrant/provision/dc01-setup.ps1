@@ -1,10 +1,35 @@
 # =============================================================================
 # DC01 — provisioning Windows Server 2019 jako kontroler domeny soclab.local
-# Wywoływany przez Vagranta po pierwszym boocie.
-# Idempotentny — może być uruchamiany wielokrotnie.
+# Vagrant uruchamia Promote, wykonuje reboot, potem Configure.
+# Oba etapy można ponowić przez vagrant provision dc01.
 # =============================================================================
 
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Promote', 'Configure')]
+    [string]$Phase,
+    [ValidateRange(1, 120)]
+    [int]$ReadyAttempts = 60,
+    [ValidateRange(0, 60)]
+    [int]$ReadyDelaySeconds = 10
+)
+
 $ErrorActionPreference = "Stop"
+
+# -----------------------------------------------------------------------------
+# Hasła laboratorium (SOC-01). Domyślne wartości są CELOWO słabe i jawne — to izolowane
+# laboratorium (Vagrant private_network) do symulacji ataków. Każdą można nadpisać
+# zmienną środowiskową hosta (przekazywaną przez Vagrantfile), np. przy dłuższym użyciu
+# albo w sieci, do której mają dostęp inne osoby.
+# -----------------------------------------------------------------------------
+function Get-LabSecret([string]$Name, [string]$LabDefault) {
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-Warning "[!] $Name nie ustawione — używam jawnego hasła laboratoryjnego (tylko izolowana sieć)."
+        return $LabDefault
+    }
+    return $value
+}
 Write-Host "[+] DC01 provisioning — start"
 
 # -----------------------------------------------------------------------------
@@ -52,51 +77,63 @@ Set-TimeZone -Id "Central European Standard Time"
 # -----------------------------------------------------------------------------
 # 3. Instalacja roli AD DS i promocja
 # -----------------------------------------------------------------------------
-if (-not (Get-WindowsFeature -Name AD-Domain-Services).Installed) {
-    Write-Host "[+] Instaluję rolę AD-Domain-Services"
-    Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools | Out-Null
+if ($Phase -eq 'Promote') {
+    if (-not (Get-WindowsFeature -Name AD-Domain-Services).Installed) {
+        Write-Host "[+] Instaluję rolę AD-Domain-Services"
+        Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools | Out-Null
+    }
+
+    # DomainRole jest lokalny; chwilowa niedostępność AD nie oznacza nowej domeny.
+    if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) {
+        Write-Host "[+] Promuję serwer na DC w nowej domenie soclab.local"
+        $securePass = ConvertTo-SecureString (Get-LabSecret "LAB_DSRM_PASSWORD" "P@ssw0rd!Lab") -AsPlainText -Force
+
+        Install-ADDSForest `
+            -DomainName "soclab.local" `
+            -DomainNetbiosName "SOCLAB" `
+            -ForestMode "WinThreshold" `
+            -DomainMode "WinThreshold" `
+            -InstallDns:$true `
+            -SafeModeAdministratorPassword $securePass `
+            -NoRebootOnCompletion:$true `
+            -Force:$true | Out-Null
+
+    }
+    Write-Host "[+] Etap Promote zakończony. Vagrant wykona restart przed Configure."
+    return
 }
 
-# Sprawdź czy domena już istnieje
-$alreadyDC = $false
-try {
-    Get-ADDomain -ErrorAction Stop | Out-Null
-    $alreadyDC = $true
-} catch { }
-
-if (-not $alreadyDC) {
-    Write-Host "[+] Promuję serwer na DC w nowej domenie soclab.local"
-    $securePass = ConvertTo-SecureString "P@ssw0rd!Lab" -AsPlainText -Force
-
-    Install-ADDSForest `
-        -DomainName "soclab.local" `
-        -DomainNetbiosName "SOCLAB" `
-        -ForestMode "WinThreshold" `
-        -DomainMode "WinThreshold" `
-        -InstallDns:$true `
-        -SafeModeAdministratorPassword $securePass `
-        -NoRebootOnCompletion:$true `
-        -Force:$true | Out-Null
-
-    Write-Host "[!] Promocja zakończona. Restart wymagany — Vagrant zrestartuje VM po tym etapie."
-    Restart-Computer -Force
-    exit 0
+# Po reboocie WinRM może być gotowy przed AD DS/ADWS. Nie pomijaj kont testowych.
+if ((Get-CimInstance Win32_ComputerSystem).DomainRole -lt 4) {
+    throw 'DC01 nie jest kontrolerem domeny. Uruchom vagrant provision dc01 (Promote + reboot + Configure).'
+}
+Import-Module ActiveDirectory
+$domainReady = $false
+for ($i = 0; $i -lt $ReadyAttempts; $i++) {
+    try {
+        Get-ADDomain -Identity 'soclab.local' -Server localhost -ErrorAction Stop | Out-Null
+        $domainReady = $true
+        break
+    } catch {
+        if ($i -lt ($ReadyAttempts - 1)) { Start-Sleep -Seconds $ReadyDelaySeconds }
+    }
+}
+if (-not $domainReady) {
+    throw 'AD DS nie jest gotowe po restarcie. Sprawdź DC01 i ponów vagrant provision dc01.'
 }
 
 # -----------------------------------------------------------------------------
 # 4. Twórz konta testowe (po promocji, gdy już jesteśmy DC)
 # -----------------------------------------------------------------------------
-Import-Module ActiveDirectory
-
 if (-not (Get-ADOrganizationalUnit -Filter "Name -eq 'LabUsers'" -ErrorAction SilentlyContinue)) {
     Write-Host "[+] Tworzę OU=LabUsers"
     New-ADOrganizationalUnit -Name "LabUsers" -Path "DC=soclab,DC=local"
 }
 
 $labUsers = @(
-    @{ Sam = "akowalska"; Name = "Anna Kowalska"; Pass = "Wiosna2024!"; Admin = $true  },
-    @{ Sam = "jnowak";    Name = "Jan Nowak";     Pass = "Lato2024!";   Admin = $false },
-    @{ Sam = "svc-backup"; Name = "Backup Service"; Pass = "B@ckup!2024Lab"; Admin = $false }
+    @{ Sam = "akowalska"; Name = "Anna Kowalska"; Pass = (Get-LabSecret "LAB_AKOWALSKA_PASSWORD" "Wiosna2024!"); Admin = $true  },
+    @{ Sam = "jnowak";    Name = "Jan Nowak";     Pass = (Get-LabSecret "LAB_JNOWAK_PASSWORD" "Lato2024!");   Admin = $false },
+    @{ Sam = "svc-backup"; Name = "Backup Service"; Pass = (Get-LabSecret "LAB_SVC_BACKUP_PASSWORD" "B@ckup!2024Lab"); Admin = $false }
 )
 
 foreach ($u in $labUsers) {
@@ -109,10 +146,9 @@ foreach ($u in $labUsers) {
                    -AccountPassword (ConvertTo-SecureString $u.Pass -AsPlainText -Force) `
                    -Enabled $true `
                    -PasswordNeverExpires $true
-
-        if ($u.Admin) {
-            Add-ADGroupMember -Identity "Domain Admins" -Members $u.Sam
-        }
+    }
+    if ($u.Admin) {
+        Add-ADGroupMember -Identity "Domain Admins" -Members $u.Sam
     }
 }
 
@@ -150,4 +186,5 @@ New-NetFirewallRule -DisplayName "Wazuh-Out-1515" `
 Write-Host "[+] DC01 provisioning — gotowe."
 Write-Host "    Domena:   soclab.local"
 Write-Host "    NetBIOS:  SOCLAB"
-Write-Host "    Adminy:   SOCLAB\Administrator (P@ssw0rd!Lab), SOCLAB\akowalska"
+Write-Host "    Konto dołączenia WS01: SOCLAB\akowalska (hasło labowe z definicji użytkownika)."
+Write-Host "    Hasło DSRM nie zmienia hasła konta Administrator."

@@ -29,7 +29,8 @@ import json
 import pathlib
 import re
 import sys
-import xml.etree.ElementTree as ET
+# SOC-03: defusedxml blokuje encje zewnętrzne i "billion laughs" przy parsowaniu reguł.
+import defusedxml.ElementTree as ET
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
