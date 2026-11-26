@@ -30,6 +30,11 @@ ROOT = Path(__file__).resolve().parent.parent
 RULES_XML = ROOT / "detection-rules" / "custom-wazuh-rules.xml"
 DOCS_DIR = ROOT / "docs"
 
+# Zakres reguł własnych jak CUSTOM_ID_MIN..CUSTOM_ID_MAX w validate_detections.py.
+# Wcześniej 10\d{4} (100000..109999): cytat brakującej reguły 110001..120000
+# przechodził bez błędu.
+RULE_ID = r"(?:1[01]\d{4}|120000)"
+
 # Wzorce, które sygnalizują wynik podany jako zaobserwowany. Jeżeli kiedyś
 # laboratorium zostanie faktycznie uruchomione, wyniki wchodzą do dokumentu
 # razem z datą i czasem trwania pomiaru — wtedy ten wzorzec trzeba poluzować
@@ -58,13 +63,13 @@ def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
     problems: list[str] = []
 
     # Reguły cytowane w dokumencie muszą istnieć.
-    for rule_id in sorted(set(re.findall(r"\b(10\d{4})\b", text))):
+    for rule_id in sorted(set(re.findall(r"\b(" + RULE_ID + r")\b", text))):
         if rule_id not in rules:
             problems.append(f"{name}: cytuje nieistniejącą regułę {rule_id}")
 
     # Wiersze tabel postaci: | `100xxx` | <poziom> | <warunek> | <MITRE> |
     row = re.compile(
-        r"^\|\s*\*{0,2}`(10\d{4})`\*{0,2}\s*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|(.*?)\|\s*([^|]*?)\s*\|\s*$",
+        r"^\|\s*\*{0,2}`(" + RULE_ID + r")`\*{0,2}\s*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|(.*?)\|\s*([^|]*?)\s*\|\s*$",
         re.M,
     )
     for rule_id, level, _condition, mitre_cell in row.findall(text):
@@ -84,7 +89,7 @@ def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
             )
 
     # Zapis prozą: `100210`, level 14 — używany w sekcjach „Oczekiwany alert".
-    for rule_id, level in re.findall(r"`(10\d{4})`[^\n]{0,40}?level (\d+)", text):
+    for rule_id, level in re.findall(r"`(" + RULE_ID + r")`[^\n]{0,40}?level (\d+)", text):
         rule = rules.get(rule_id)
         if rule and rule["level"] != level:
             problems.append(
