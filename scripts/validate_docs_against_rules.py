@@ -111,6 +111,14 @@ def main() -> int:
         return 1
 
     documents = sorted(DOCS_DIR.rglob("*.md"))
+    if not documents:
+        # Pusty zestaw niczego nie sprawdza — to nie jest sukces.
+        print(
+            f"Nie znaleziono żadnego dokumentu w {DOCS_DIR.relative_to(ROOT)}/",
+            file=sys.stderr,
+        )
+        return 1
+
     problems: list[str] = []
     for document in documents:
         problems.extend(check_document(document, rules))
