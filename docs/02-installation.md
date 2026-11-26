@@ -420,7 +420,7 @@ sudo /var/ossec/bin/agent_control -l   # wszyscy powinni być Active
 |---|---|---|
 | Agent `Disconnected` po instalacji | Firewall na endpointach blokuje 1514 wychodzące | `New-NetFirewallRule -DisplayName "Wazuh-Out" -Direction Outbound -Protocol TCP -RemotePort 1514 -Action Allow` |
 | `wazuh-indexer` nie startuje, OOM w dmesg | Za mało RAM dla JVM | `/etc/wazuh-indexer/jvm.options` → `-Xms1g -Xmx1g` |
-| Dashboard pokazuje "No alerts" mimo, że są w `/var/ossec/logs/alerts/alerts.json` | Indeks nie jest tworzony | Sprawdź `curl -u admin:HASLO -k https://localhost:9200/_cat/indices` — czy istnieje `wazuh-alerts-4.x-YYYY.MM.DD` |
+| Dashboard pokazuje "No alerts" mimo, że są w `/var/ossec/logs/alerts/alerts.json` | Indeks nie jest tworzony | Sprawdź `curl -u admin -k https://localhost:9200/_cat/indices` (curl zapyta o hasło; nie wpisuj go w `-u`, bo trafi do historii powłoki) — czy istnieje `wazuh-alerts-4.x-YYYY.MM.DD` |
 | `wazuh-analysisd -t` zwraca błąd konfiguracji | Błąd managera lub `local_rules.xml` | Odczytaj plik i linię zgłoszoną przez manager, popraw ją i powtórz test przed restartem |
 | Brak EventID 4688 (Process Create) z linią komend | Audyt PolicyChange wyłączony lub brak GPO | `auditpol /set /subcategory:"Process Creation" /success:enable` + GPO `Include command line in process creation events` = Enabled |
 | Sigma → Wazuh: reguła nie strzela | Mapowanie pól (`process.command_line` vs `data.win.eventdata.commandLine`) | Użyj `sigma convert -t wazuh` aktualnej wersji `pysigma-backend-elasticsearch` z plugin `wazuh-mapping` |
