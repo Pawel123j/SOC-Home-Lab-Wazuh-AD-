@@ -32,9 +32,20 @@ Bramka CI sprawdza ich strukturę, spójność lokalnych łańcuchów i treść 
 | Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha |
 | Ansible / compose | parsowanie YAML, składnia skryptów powłoki, `docker compose config` |
 
+Lokalnie (Python 3.11+, CI używa 3.12; bez Dockera, VM ani sieci poza PyPI):
+
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r requirements-test.txt
 python3 scripts/validate_detections.py
+python3 -m pytest -q tests
+python3 scripts/validate_docs_against_rules.py
 ```
+
+Każda z trzech komend kończy się kodem `0`; pierwsza wypisuje
+`OK — wszystkie sprawdzenia przeszły.` Bez kroku `pip install` walidator
+kończy się błędem `ModuleNotFoundError: No module named 'defusedxml'`.
 
 **Czego CI nie robi:** nie uruchamia Wazuha ani Windows Event Channel, więc nie
 potwierdza, że reguła *strzeli* na prawdziwym zdarzeniu. Fixture JSON sprawdza
