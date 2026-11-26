@@ -8,7 +8,7 @@ Uruchamiany w CI (.github/workflows/validate.yml) oraz lokalnie:
 Sprawdza trzy rzeczy, których zepsucie jest w tym repo najbardziej kosztowne:
 
 1. **Reguły Wazuh** (`detection-rules/custom-wazuh-rules.xml`) — poprawność XML,
-   unikalność `id`, zakres ID zarezerwowany dla reguł własnych, obecność
+   unikalność i format `id` (1..6 cyfr ASCII), zakres ID zarezerwowany dla reguł własnych, obecność
    `level`, `description` i mapowania MITRE, oraz spójność łańcuchów
    `if_sid`/`if_matched_sid` w obrębie pliku.
 2. **Reguły Sigma** (`detection-rules/sigma-rules/*.yml`) — poprawność YAML
@@ -84,8 +84,12 @@ def check_wazuh_rules() -> None:
             fail(f"reguła {rid}: zduplikowane id (występuje {seen[rid] + 1} raz/y)")
         seen[rid] = seen.get(rid, 0) + 1
 
-        if not rid.isdigit():
-            fail(f"reguła {rid}: id nie jest liczbą")
+        # wazuh-analysisd (rules.c) przyjmuje id tylko jako cyfry ASCII,
+        # maks. 6 znaków. str.isdigit() przepuszczał też "0100241" czy cyfry
+        # spoza ASCII, które int() zamienia na istniejące ID — duplikat
+        # liczbowy umykał porównaniu napisów, a manager i tak odrzuca takie id.
+        if not re.fullmatch(r"[0-9]{1,6}", rid):
+            fail(f"reguła {rid}: id musi mieć 1..6 cyfr ASCII (wymóg wazuh-analysisd)")
         elif not CUSTOM_ID_MIN <= int(rid) <= CUSTOM_ID_MAX:
             fail(
                 f"reguła {rid}: id poza zakresem reguł własnych "

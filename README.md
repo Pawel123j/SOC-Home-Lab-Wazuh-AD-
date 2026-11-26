@@ -27,7 +27,7 @@ Bramka CI sprawdza ich strukturę, spójność lokalnych łańcuchów i treść 
 
 | Sprawdzenie | Zakres |
 |---|---|
-| Reguły Wazuh | poprawność XML, unikalność ID, zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
+| Reguły Wazuh | poprawność XML, unikalność ID, format ID (1–6 cyfr ASCII, jak w `wazuh-analysisd`), zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
 | Reguły Sigma | poprawność YAML i pola wymagane przez specyfikację |
 | Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha |
 | Ansible / compose | parsowanie YAML, składnia skryptów powłoki, `docker compose config` |
