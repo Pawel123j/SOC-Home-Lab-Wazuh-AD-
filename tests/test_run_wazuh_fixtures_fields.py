@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from run_wazuh_fixtures import CASES  # noqa: E402
 EVENTS = "infrastructure/docker/test-events"
 INPUTS = ["scripts/run_wazuh_fixtures.py", "detection-rules/custom-wazuh-rules.xml", EVENTS]
 
@@ -83,7 +85,7 @@ def run_cli(tmp_path, edit_fixture=None, edit_script=None):
 def test_complete_fixtures_are_scored(tmp_path):
     code, output, report, calls = run_cli(tmp_path)
     assert code == 0, output
-    assert (report["false_negatives"], report["false_positives"], calls) == (0, 0, 20)
+    assert (report["false_negatives"], report["false_positives"], calls) == (0, 0, 2 * len(CASES))
 
 
 def test_fixture_without_negative_field_stops_before_manager(tmp_path):
