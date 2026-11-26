@@ -371,10 +371,15 @@
   Regula 100250 = wykonanie typowych polecen reconu w PowerShell/cmd.
   Lapie: net group "Domain Admins", whoami /groups, nltest /dclist, Get-ADUser, etc.
   Sysmon EID 1 -> Wazuh base rule 61603.
+  net/nltest/whoami: opcjonalne .exe i cudzyslow zamykajacy sciezke
+  (whoami.exe /groups, "C:\Windows\system32\whoami.exe" /groups).
+  net1.exe celowo pominiety: net.exe uruchamia net1.exe z tymi samymi
+  argumentami, wiec jedno polecenie daloby 2 alerty i samo spelniloby
+  frequency=2 w 100297.
   -->
   <rule id="100250" level="7">
     <if_sid>61603</if_sid>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)(net\s+(group|user)\s+"?Domain Admins|nltest\s+/dclist|whoami\s+/groups|net\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net\s+session)</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?"?\s+(group|user)\s+"?Domain Admins|nltest(?:\.exe)?"?\s+/dclist|whoami(?:\.exe)?"?\s+/groups|net(?:\.exe)?"?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?"?\s+session)</field>
     <description>Suspicious discovery command: $(win.eventdata.commandLine)</description>
     <mitre>
       <id>T1087.002</id>

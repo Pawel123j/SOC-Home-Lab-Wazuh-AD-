@@ -27,14 +27,25 @@ Bramka CI sprawdza ich strukturę, spójność lokalnych łańcuchów i treść 
 
 | Sprawdzenie | Zakres |
 |---|---|
-| Reguły Wazuh | poprawność XML, unikalność ID, zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
+| Reguły Wazuh | poprawność XML, unikalność ID, format ID (1–6 cyfr ASCII, jak w `wazuh-analysisd`), zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
 | Reguły Sigma | poprawność YAML i pola wymagane przez specyfikację |
 | Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha |
 | Ansible / compose | parsowanie YAML, składnia skryptów powłoki, `docker compose config` |
 
+Lokalnie (Python 3.11+, CI używa 3.12; bez Dockera, VM ani sieci poza PyPI):
+
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r requirements-test.txt
 python3 scripts/validate_detections.py
+python3 -m pytest -q tests
+python3 scripts/validate_docs_against_rules.py
 ```
+
+Każda z trzech komend kończy się kodem `0`; pierwsza wypisuje
+`OK — wszystkie sprawdzenia przeszły.` Bez kroku `pip install` walidator
+kończy się błędem `ModuleNotFoundError: No module named 'defusedxml'`.
 
 **Czego CI nie robi:** nie uruchamia Wazuha ani Windows Event Channel, więc nie
 potwierdza, że reguła *strzeli* na prawdziwym zdarzeniu. Fixture JSON sprawdza
@@ -43,7 +54,7 @@ gościa Windows.
 
 ## Detection catalogue
 
-Nine detection scenarios in [`docs/detections/`](docs/detections/) — one file per
+Ten detection scenarios in [`docs/detections/`](docs/detections/) — one file per
 scenario, covering all 18 custom Wazuh rules. Each documents the attack technique,
 log source, detection logic, the rule itself, MITRE mapping, expected alert,
 **false positives and limitations**.
@@ -144,7 +155,7 @@ soc-home-lab/
 │   ├── 02-installation.md               Wazuh manager + agent install guide (PL)
 │   ├── 03-attack-scenarios.md           5 scenarios × MITRE ATT&CK
 │   ├── 04-detection-results.md          expected alerts, derived from the rules
-│   └── detections/                      9 detection scenarios, one per file
+│   └── detections/                      10 detection scenarios, one per file
 ├── infrastructure/
 │   ├── vagrant/Vagrantfile              4 VMs orchestrated as code
 │   └── ansible/                         playbooks for agent rollout
@@ -207,7 +218,7 @@ These are the gaps between a home lab and a real production SOC — items I woul
 
 1. **Log retention is fake here.** The lab keeps everything on one indexer node. In production I'd front Wazuh's indexer with hot/warm/cold ILM in OpenSearch and ship to immutable cold storage (e.g. S3 with object lock) for the regulator-mandated retention period (12–24 months depending on jurisdiction).
 2. **No high availability.** A single Wazuh manager is a single point of failure. Production deployment requires a cluster (master + 2 workers minimum) behind a load balancer, and a multi-node indexer cluster with a quorum.
-3. **Detection coverage is shallow.** 12 rules is a portfolio piece, not a baseline. The next step is mapping coverage against MITRE ATT&CK using DeTT&CT and tracking which sub-techniques have zero detections.
+3. **Detection coverage is shallow.** 18 custom rules is a portfolio piece, not a baseline. The next step is mapping coverage against MITRE ATT&CK using DeTT&CT and tracking which sub-techniques have zero detections.
 4. **No tuning loop.** In production I'd track every alert by analyst disposition (TP / FP / B-TP) in a ticketing system and feed FP rates back into rule tuning weekly. Rules without an owner get deprecated.
 5. **No SOAR / playbooks.** Manual triage scales to ~50 alerts/day per analyst. Anything above that requires automated enrichment (AbuseIPDB, VT, internal CMDB) and one-click containment — I'd integrate Shuffle or TheHive + Cortex.
 6. **Threat intelligence is missing.** No MISP feed, no automated IoC matching, no STIX/TAXII ingestion. The CDB lists in Wazuh are an okay starting point but they don't replace a real TIP.

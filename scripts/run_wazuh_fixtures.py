@@ -2,6 +2,8 @@
 
 Only feeds synthetic JSON to logtest. Does not run attack scripts, restart a
 service, install rules or claim agent/indexer/AD or correlation coverage.
+Stops before the first logtest call if a fixture lacks the win.eventdata
+field its negative sample replaces.
 """
 
 import argparse
@@ -23,6 +25,7 @@ CASES = [
     ("09-archive-temp.json", "100232", "targetFilename", r"C:\Users\Public\note.txt"),
     ("10-registry-run.json", "100240", "targetObject", r"HKLM\Software\Example\Setting"),
     ("11-scheduled-task.json", "100241", "commandLine", "schtasks.exe /query"),
+    ("12-discovery-whoami.json", "100250", "commandLine", "whoami /user"),
 ]
 
 
@@ -51,9 +54,18 @@ def main():
     parser.add_argument("--container", required=True, help="Your isolated Wazuh test container")
     parser.add_argument("--output", required=True, type=Path, help="New evidence JSON file")
     args = parser.parse_args()
+    events = {}
+    for filename, _expected, field, _benign in CASES:
+        event = json.loads((ROOT / "infrastructure/docker/test-events" / filename).read_text())
+        # The negative replaces this field. If it is absent, assignment would
+        # add a new key and leave the matched value in place, so the run would
+        # blame the rule (FN/FP) for a broken fixture or case.
+        if field not in event.get("win", {}).get("eventdata", {}):
+            raise SystemExit(f"{filename}: no win.eventdata.{field}; fix the fixture or CASES")
+        events[filename] = event
     records = []
     for filename, expected, field, benign in CASES:
-        event = json.loads((ROOT / "infrastructure/docker/test-events" / filename).read_text())
+        event = events[filename]
         actual, output = run(args.container, event)
         records.append({"fixture": filename, "kind": "positive", "expected": expected,
                         "actual": actual, "passed": actual == expected, "output": output})

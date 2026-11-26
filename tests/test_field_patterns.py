@@ -26,6 +26,7 @@ CASES = [
     ("09-archive-temp.json", "100232", "targetFilename", r"C:\Users\Public\note.txt"),
     ("10-registry-run.json", "100240", "targetObject", r"HKLM\Software\Example\Setting"),
     ("11-scheduled-task.json", "100241", "commandLine", "schtasks.exe /query"),
+    ("12-discovery-whoami.json", "100250", "commandLine", "whoami /user"),
 ]
 
 
@@ -76,3 +77,41 @@ def test_fixtures_contain_decoded_single_path_separators():
     for filename, *_ in CASES:
         event = json.loads((ROOT / "infrastructure/docker/test-events" / filename).read_text())
         assert event == normalize_paths(event), filename
+
+
+DISCOVERY_POSITIVES = [
+    "whoami /groups",
+    "whoami.exe /groups",
+    r'"C:\Windows\system32\whoami.exe" /groups',
+    r'"C:\Windows\system32\nltest.exe" /dclist:corp.example',
+    "nltest /dclist:corp.example",
+    'net group "Domain Admins" /domain',
+    'net.exe group "Domain Admins" /domain',
+    r'"C:\Windows\system32\net.exe" user "Domain Admins"',
+    "net view /domain",
+    "net session",
+    "Get-ADUser -Filter *",
+    "Get-ADComputer -Filter *",
+]
+DISCOVERY_NEGATIVES = [
+    "whoami /user",
+    "whoami.exe /user",
+    "net use",
+    r'"C:\Windows\system32\net.exe" use Z: \\fs01\share',
+    "net user labuser",
+    'net1 group "Domain Admins" /domain',
+]
+
+
+def discovery_event(command_line):
+    return {"win": {"eventdata": {"commandLine": command_line}}}
+
+
+@pytest.mark.parametrize("command_line", DISCOVERY_POSITIVES)
+def test_discovery_matches_bare_exe_and_quoted_path(command_line):
+    assert matches("100250", discovery_event(command_line))
+
+
+@pytest.mark.parametrize("command_line", DISCOVERY_NEGATIVES)
+def test_discovery_ignores_benign_commands(command_line):
+    assert not matches("100250", discovery_event(command_line))

@@ -15,6 +15,13 @@ Dopasowanie linii poleceń do zestawu typowych poleceń rozpoznania:
 `net group "Domain Admins"`, `nltest /dclist`, `whoami /groups`,
 `net view /domain`, `Get-ADUser -Filter`, `Get-ADComputer -Filter`, `net session`.
 
+Dla `net`, `nltest` i `whoami` dopuszczalne jest opcjonalne rozszerzenie `.exe`
+oraz ścieżka w cudzysłowie, bo tak Sysmon zapisuje polecenie uruchomione
+z PowerShella lub pełną ścieżką: `whoami.exe /groups`,
+`"C:\Windows\system32\whoami.exe" /groups`. Ścieżka nie jest kotwiczona —
+wzorzec szuka nazwy narzędzia w dowolnym miejscu linii poleceń, więc prefiks
+ścieżki (z cudzysłowem lub bez) nie przeszkadza w dopasowaniu.
+
 Poziom 7 jest celowo niski: pojedyncze takie polecenie bywa uzasadnione,
 a wartość reguły ujawnia się dopiero w korelacji (`100297`) i przy analizie
 retrospektywnej.
@@ -24,7 +31,7 @@ retrospektywnej.
 ```xml
 <rule id="100250" level="7">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.commandLine" type="pcre2">(?i)(net\s+(group|user)\s+"?Domain Admins|nltest\s+/dclist|whoami\s+/groups|net\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net\s+session)</field>
+  <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?"?\s+(group|user)\s+"?Domain Admins|nltest(?:\.exe)?"?\s+/dclist|whoami(?:\.exe)?"?\s+/groups|net(?:\.exe)?"?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?"?\s+session)</field>
   <description>Suspicious discovery command: $(win.eventdata.commandLine)</description>
   <mitre>
     <id>T1087.002</id>
@@ -58,6 +65,11 @@ Reguła opiera się na dopasowaniu ciągów, więc omija ją każda zmiana zapis
 skrócone parametry, użycie API zamiast poleceń, narzędzia takie jak BloodHound
 zbierające te same dane przez LDAP bez uruchamiania `net`. Wykrycie zbierania
 danych przez LDAP wymaga logowania zapytań na kontrolerze domeny — roadmapa.
+
+`net1.exe` celowo nie jest dopasowywany: `net.exe` uruchamia `net1.exe`
+z tymi samymi argumentami, więc jedno polecenie dałoby dwa alerty `100250`
+i samo spełniłoby próg `frequency="2"` korelacji `100297`. Bezpośrednie
+wywołanie `net1` omija regułę.
 
 ## Walidacja
 

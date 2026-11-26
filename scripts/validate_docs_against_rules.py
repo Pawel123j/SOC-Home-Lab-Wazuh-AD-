@@ -26,9 +26,16 @@ import re
 import sys
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
+
 ROOT = Path(__file__).resolve().parent.parent
 RULES_XML = ROOT / "detection-rules" / "custom-wazuh-rules.xml"
 DOCS_DIR = ROOT / "docs"
+
+# Zakres reguł własnych jak CUSTOM_ID_MIN..CUSTOM_ID_MAX w validate_detections.py.
+# Wcześniej 10\d{4} (100000..109999): cytat brakującej reguły 110001..120000
+# przechodził bez błędu.
+RULE_ID = r"(?:1[01]\d{4}|120000)"
 
 # Wzorce, które sygnalizują wynik podany jako zaobserwowany. Jeżeli kiedyś
 # laboratorium zostanie faktycznie uruchomione, wyniki wchodzą do dokumentu
@@ -41,13 +48,20 @@ FABRICATED_EVIDENCE = [
 
 
 def parse_rules(xml_text: str) -> dict[str, dict]:
+    # Parser XML, nie regex: <id> w komentarzu wewnątrz <mitre> nie jest
+    # techniką ani dla Wazuha, ani dla validate_detections.py.
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {}
     rules: dict[str, dict] = {}
-    for match in re.finditer(r'<rule id="(\d+)"([^>]*)>(.*?)</rule>', xml_text, re.S):
-        rule_id, attrs, body = match.group(1), match.group(2), match.group(3)
-        level = re.search(r'level="(\d+)"', attrs)
+    for rule in root.iter("rule"):
+        rule_id, level = rule.get("id", ""), rule.get("level", "")
+        if not re.fullmatch(r"\d+", rule_id):
+            continue
         rules[rule_id] = {
-            "level": level.group(1) if level else None,
-            "mitre": set(re.findall(r"<id>(.*?)</id>", body)),
+            "level": level if re.fullmatch(r"\d+", level) else None,
+            "mitre": {element.text or "" for element in rule.findall("mitre/id")},
         }
     return rules
 
@@ -58,13 +72,13 @@ def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
     problems: list[str] = []
 
     # Reguły cytowane w dokumencie muszą istnieć.
-    for rule_id in sorted(set(re.findall(r"\b(10\d{4})\b", text))):
+    for rule_id in sorted(set(re.findall(r"\b(" + RULE_ID + r")\b", text))):
         if rule_id not in rules:
             problems.append(f"{name}: cytuje nieistniejącą regułę {rule_id}")
 
     # Wiersze tabel postaci: | `100xxx` | <poziom> | <warunek> | <MITRE> |
     row = re.compile(
-        r"^\|\s*\*{0,2}`(10\d{4})`\*{0,2}\s*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|(.*?)\|\s*([^|]*?)\s*\|\s*$",
+        r"^\|\s*\*{0,2}`(" + RULE_ID + r")`\*{0,2}\s*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|(.*?)\|\s*([^|]*?)\s*\|\s*$",
         re.M,
     )
     for rule_id, level, _condition, mitre_cell in row.findall(text):
@@ -84,7 +98,7 @@ def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
             )
 
     # Zapis prozą: `100210`, level 14 — używany w sekcjach „Oczekiwany alert".
-    for rule_id, level in re.findall(r"`(10\d{4})`[^\n]{0,40}?level (\d+)", text):
+    for rule_id, level in re.findall(r"`(" + RULE_ID + r")`[^\n]{0,40}?level (\d+)", text):
         rule = rules.get(rule_id)
         if rule and rule["level"] != level:
             problems.append(
@@ -111,6 +125,14 @@ def main() -> int:
         return 1
 
     documents = sorted(DOCS_DIR.rglob("*.md"))
+    if not documents:
+        # Pusty zestaw niczego nie sprawdza — to nie jest sukces.
+        print(
+            f"Nie znaleziono żadnego dokumentu w {DOCS_DIR.relative_to(ROOT)}/",
+            file=sys.stderr,
+        )
+        return 1
+
     problems: list[str] = []
     for document in documents:
         problems.extend(check_document(document, rules))
