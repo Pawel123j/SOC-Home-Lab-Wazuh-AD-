@@ -48,7 +48,9 @@ def empty_group(base):
 def test_complete_inputs_pass(tmp_path):
     code, output = run_on_copy(tmp_path)
     assert code == 0, output
-    assert "Sigma: 4 reguł" in output and "Zdarzenia: 10 plików JSON" in output
+    sigma = len(list((ROOT / SIGMA).glob("*.yml"))) + len(list((ROOT / SIGMA).glob("*.yaml")))
+    events = len(list((ROOT / EVENTS).glob("*.json")))
+    assert f"Sigma: {sigma} reguł" in output and f"Zdarzenia: {events} plików JSON" in output
 
 
 @pytest.mark.parametrize("prepare,message", [
