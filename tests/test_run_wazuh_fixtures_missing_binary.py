@@ -13,6 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts/run_wazuh_fixtures.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+from run_wazuh_fixtures import CASES  # noqa: E402
 
 MISSING_LOGTEST = """#!/bin/sh
 cat >/dev/null
@@ -66,7 +68,7 @@ def test_working_logtest_produces_report(tmp_path):
     code, output, report = run_cli(tmp_path, WORKING_LOGTEST)
     assert code == 0, output
     data = json.loads(report.read_text())
-    assert (data["false_negatives"], data["false_positives"], len(data["records"])) == (0, 0, 20)
+    assert (data["false_negatives"], data["false_positives"], len(data["records"])) == (0, 0, 2 * len(CASES))
 
 
 def test_missing_docker_binary_fails_without_report(tmp_path):
