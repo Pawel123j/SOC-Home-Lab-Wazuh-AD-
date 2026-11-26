@@ -25,6 +25,7 @@ CASES = [
     ("09-archive-temp.json", "100232", "targetFilename", r"C:\Users\Public\note.txt"),
     ("10-registry-run.json", "100240", "targetObject", r"HKLM\Software\Example\Setting"),
     ("11-scheduled-task.json", "100241", "commandLine", "schtasks.exe /query"),
+    ("12-discovery-whoami.json", "100250", "commandLine", "whoami /user"),
 ]
 
 
