@@ -26,6 +26,8 @@ import re
 import sys
 from pathlib import Path
 
+import defusedxml.ElementTree as ET
+
 ROOT = Path(__file__).resolve().parent.parent
 RULES_XML = ROOT / "detection-rules" / "custom-wazuh-rules.xml"
 DOCS_DIR = ROOT / "docs"
@@ -41,13 +43,20 @@ FABRICATED_EVIDENCE = [
 
 
 def parse_rules(xml_text: str) -> dict[str, dict]:
+    # Parser XML, nie regex: <id> w komentarzu wewnątrz <mitre> nie jest
+    # techniką ani dla Wazuha, ani dla validate_detections.py.
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {}
     rules: dict[str, dict] = {}
-    for match in re.finditer(r'<rule id="(\d+)"([^>]*)>(.*?)</rule>', xml_text, re.S):
-        rule_id, attrs, body = match.group(1), match.group(2), match.group(3)
-        level = re.search(r'level="(\d+)"', attrs)
+    for rule in root.iter("rule"):
+        rule_id, level = rule.get("id", ""), rule.get("level", "")
+        if not re.fullmatch(r"\d+", rule_id):
+            continue
         rules[rule_id] = {
-            "level": level.group(1) if level else None,
-            "mitre": set(re.findall(r"<id>(.*?)</id>", body)),
+            "level": level if re.fullmatch(r"\d+", level) else None,
+            "mitre": {element.text or "" for element in rule.findall("mitre/id")},
         }
     return rules
 
