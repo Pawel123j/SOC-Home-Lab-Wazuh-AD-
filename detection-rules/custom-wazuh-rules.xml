@@ -111,10 +111,10 @@
     0x1438   ditto + PROCESS_DUP_HANDLE | THREAD_GET_CONTEXT
     0x143a   wariant z THREAD_QUERY_LIMITED_INFORMATION
     0x1fffff PROCESS_ALL_ACCESS = uzywane przez starsze Mimikatzy
-  Sysmon EID 10 -> Wazuh base rule 61609.
+  Sysmon EID 10 -> Wazuh base rule 61612 (61609 to EID 7, ImageLoad).
   -->
   <rule id="100210" level="14">
-    <if_sid>61609</if_sid>
+    <if_sid>61612</if_sid>
     <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
     <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1010|1410|1438|143a|1fffff)$</field>
     <description>Possible LSASS memory access (Mimikatz-like): $(win.eventdata.sourceImage) accessed lsass.exe with GrantedAccess=$(win.eventdata.grantedAccess)</description>
@@ -172,10 +172,11 @@
   Regula 100213 = PowerShell laczy sie z zewnetrznym IP (NetworkConnect, EID 3).
   Zakres jest heurystyka adresow hostow, nie granica sieci ani dowod ruchu z internetu.
   W produkcji warto uzyc CDB list (whitelist IP wewnetrznych).
-  Sysmon EID 3 -> Wazuh base rule 61605.
+  Sysmon EID 3 -> Wazuh base rule 61605. Wbudowana 92101 (PowerShell + tcp, level 0)
+  jest sprawdzana przed nasza regula, wiec 100213 musi byc tez jej dzieckiem.
   -->
   <rule id="100213" level="10">
-    <if_sid>61605</if_sid>
+    <if_sid>61605, 92101</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
     <field name="win.eventdata.destinationIp" type="pcre2">^(?!192\.168\.20\.|127\.|10\.|169\.254\.|192\.168\.10\.)</field>
     <description>PowerShell network connection to non-internal IP $(win.eventdata.destinationIp):$(win.eventdata.destinationPort)</description>
@@ -221,7 +222,7 @@
   <rule id="100220" level="12">
     <if_sid>61603</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)\\mshta\.exe$</field>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?\s+(https?:|//|ftp:)</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?(?:\\?")?\s+(?:\\?")?(https?:|//|ftp:)</field>
     <description>mshta.exe executing remote HTA file: $(win.eventdata.commandLine)</description>
     <mitre>
       <id>T1218.005</id>
@@ -280,7 +281,7 @@
   -->
   <rule id="100232" level="6">
     <if_sid>61613</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\(Temp|Windows\\Temp|Public|AppData\\Local\\Temp)\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\\\(Temp|Windows\\\\Temp|Public|AppData\\\\Local\\\\Temp)\\\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
     <description>Archive file created in temp folder: $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
     <mitre>
       <id>T1560.001</id>
@@ -313,12 +314,13 @@
 
   <!--
   Regula 100240 = nowy wpis w kluczu Run (autostart).
-  Sysmon EID 13 (RegistryValueSet) -> Wazuh base rule 61615.
+  Sysmon EID 13 (RegistryValueSet) -> Wazuh base rule 61615. Kazda zmiana klucza Run trafia
+  najpierw do wbudowanej 92300 (level 0), a reg.exe do 92302, wiec 100240 wisi pod nimi.
   Filtrujemy po klasycznych kluczach Run i RunOnce (HKLM i HKCU).
   -->
   <rule id="100240" level="9">
-    <if_sid>61615</if_sid>
-    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\Software\\(Wow6432Node\\)?Microsoft\\Windows\\CurrentVersion\\Run(Once)?\\</field>
+    <if_sid>92300, 92302</if_sid>
+    <field name="win.eventdata.targetObject" type="pcre2">(?i)\\\\Software\\\\(Wow6432Node\\\\)?Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(Once)?\\\\</field>
     <description>Registry persistence: new value in Run key: $(win.eventdata.targetObject) = $(win.eventdata.details)</description>
     <mitre>
       <id>T1547.001</id>
@@ -353,7 +355,7 @@
     <if_sid>61603</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)\\schtasks\.exe$</field>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)/create\b</field>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd\.exe\s*/c|mshta|rundll32|regsvr32|wmic|bitsadmin|https?://|AppData\\Local\\Temp|C:\\Users\\Public|\\Windows\\Temp\\|/ru\s+"?(NT AUTHORITY\\)?SYSTEM)</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd\.exe\s*/c|mshta|rundll32|regsvr32|wmic|bitsadmin|https?://|AppData\\\\Local\\\\Temp|C:\\\\Users\\\\Public|\\\\Windows\\\\Temp\\\\|/ru\s+(?:\\?")?(NT AUTHORITY\\\\)?SYSTEM)</field>
     <description>Scheduled task persistence: $(win.eventdata.commandLine)</description>
     <mitre>
       <id>T1053.005</id>
@@ -379,7 +381,7 @@
   -->
   <rule id="100250" level="7">
     <if_sid>61603</if_sid>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?"?\s+(group|user)\s+"?Domain Admins|nltest(?:\.exe)?"?\s+/dclist|whoami(?:\.exe)?"?\s+/groups|net(?:\.exe)?"?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?"?\s+session)</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?(?:\\?")?\s+(group|user)\s+(?:\\?")?Domain Admins|nltest(?:\.exe)?(?:\\?")?\s+/dclist|whoami(?:\.exe)?(?:\\?")?\s+/groups|net(?:\.exe)?(?:\\?")?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?(?:\\?")?\s+session)</field>
     <description>Suspicious discovery command: $(win.eventdata.commandLine)</description>
     <mitre>
       <id>T1087.002</id>

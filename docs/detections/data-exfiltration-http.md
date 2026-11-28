@@ -31,7 +31,7 @@ eksfiltracji wystarczy oznaczyć tą grupą.
 ```xml
 <rule id="100232" level="6">
   <if_sid>61613</if_sid>
-  <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\\\(Temp|Windows\\Temp|Public|AppData\\Local\\Temp)\\\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
+  <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\\\(Temp|Windows\\\\Temp|Public|AppData\\\\Local\\\\Temp)\\\\[^\\]+\.(zip|rar|7z|tar\.gz|tgz)$</field>
   <description>Archive file created in temp folder: $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
   <mitre>
     <id>T1560.001</id>
@@ -87,6 +87,12 @@ eksfiltracji wystarczy oznaczyć tą grupą.
 
 ## Ograniczenia
 
+Archiwum utworzone przez **PowerShell** (`Compress-Archive`) trafia w Wazuh
+4.7 do wbudowanej reguły `92212` (level 14, „Suspicious file compression
+activity by powershell"), sprawdzanej przed `100232`. Alert jest więc wyższy,
+ale nie ma grupy `exfil_indicator`, więc nie liczy się do korelacji `100231`.
+Fikstura testowa używa dlatego `7z.exe`, dla którego strzela `100232`.
+
 Reguła łapie naiwny wariant „spakuj i wyślij przez HTTP". **Nie wykryje**:
 
 | Technika | Dlaczego nie |
@@ -108,8 +114,13 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100232` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie ani reguł korelacyjnych (`100230`, `100231`), które
+wymagają sekwencji zdarzeń. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 

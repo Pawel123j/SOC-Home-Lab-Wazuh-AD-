@@ -27,7 +27,7 @@ import json, sys
 import pcre2
 from xml.etree import ElementTree
 sys.path.insert(0, {str(ROOT / "scripts")!r})
-from run_wazuh_fixtures import CASES, ROOT
+from run_wazuh_fixtures import CASES, ROOT, wazuh_decoded
 rules = {{r.get("id"): r for r in
          ElementTree.parse(ROOT / "detection-rules/custom-wazuh-rules.xml").getroot().iter("rule")}}
 event = json.loads(sys.stdin.read())
@@ -39,7 +39,7 @@ def hit(rule_id):
             if not isinstance(value, dict) or part not in value:
                 return False
             value = value[part]
-        if pcre2.search(field.text, str(value)) is None:
+        if pcre2.search(field.text, wazuh_decoded(value)) is None:
             return False
     return True
 

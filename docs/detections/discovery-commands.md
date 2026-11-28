@@ -22,6 +22,10 @@ z PowerShella lub pełną ścieżką: `whoami.exe /groups`,
 wzorzec szuka nazwy narzędzia w dowolnym miejscu linii poleceń, więc prefiks
 ścieżki (z cudzysłowem lub bez) nie przeszkadza w dopasowaniu.
 
+Cudzysłów jest we wzorcu zapisany jako `(?:\\?")?`, bo Wazuh przechowuje
+`"` z linii poleceń jako `\"` (a `\` jako `\\`). Sprawdzone na managerze
+Wazuh 4.7.5: zwykłe `"?` nie dopasowywało `"C:\...\whoami.exe" /groups`.
+
 Poziom 7 jest celowo niski: pojedyncze takie polecenie bywa uzasadnione,
 a wartość reguły ujawnia się dopiero w korelacji (`100297`) i przy analizie
 retrospektywnej.
@@ -31,7 +35,7 @@ retrospektywnej.
 ```xml
 <rule id="100250" level="7">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?"?\s+(group|user)\s+"?Domain Admins|nltest(?:\.exe)?"?\s+/dclist|whoami(?:\.exe)?"?\s+/groups|net(?:\.exe)?"?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?"?\s+session)</field>
+  <field name="win.eventdata.commandLine" type="pcre2">(?i)(net(?:\.exe)?(?:\\?")?\s+(group|user)\s+(?:\\?")?Domain Admins|nltest(?:\.exe)?(?:\\?")?\s+/dclist|whoami(?:\.exe)?(?:\\?")?\s+/groups|net(?:\.exe)?(?:\\?")?\s+view\s+/domain|Get-ADUser\s+-Filter|Get-ADComputer\s+-Filter|net(?:\.exe)?(?:\\?")?\s+session)</field>
   <description>Suspicious discovery command: $(win.eventdata.commandLine)</description>
   <mitre>
     <id>T1087.002</id>
@@ -81,8 +85,12 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100250` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 

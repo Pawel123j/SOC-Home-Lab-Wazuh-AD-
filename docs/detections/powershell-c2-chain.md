@@ -35,8 +35,8 @@ lista do ręcznego utrzymania.
 ```xml
 <rule id="100212" level="11">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
-  <field name="win.eventdata.commandLine" type="pcre2">(?i)-(Enc|EncodedCommand|e )\s+[A-Za-z0-9+/=]{200,}</field>
+  <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
+  <field name="win.eventdata.commandLine" type="pcre2">(?i)-(Enc(?:odedCommand)?|e)\s+[A-Za-z0-9+/=]{200,}</field>
   <description>Suspicious PowerShell with long EncodedCommand: possible payload obfuscation</description>
   <mitre>
     <id>T1059.001</id>
@@ -46,8 +46,8 @@ lista do ręcznego utrzymania.
 </rule>
 
 <rule id="100213" level="10">
-  <if_sid>61605</if_sid>
-  <field name="win.eventdata.image" type="pcre2">(?i)\\\\powershell(_ise)?\.exe$</field>
+  <if_sid>61605, 92101</if_sid>
+  <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
   <field name="win.eventdata.destinationIp" type="pcre2">^(?!192\.168\.20\.|127\.|10\.|169\.254\.|192\.168\.10\.)</field>
   <description>PowerShell network connection to non-internal IP $(win.eventdata.destinationIp):$(win.eventdata.destinationPort)</description>
   <mitre>
@@ -59,7 +59,7 @@ lista do ręcznego utrzymania.
 
 <rule id="100214" level="12">
   <if_sid>91802</if_sid>
-  <field name="win.eventdata.scriptBlockText" type="pcre2">(?i)(IEX|Invoke-Expression)[^;]*(DownloadString|DownloadData|Invoke-WebRequest|Net\.WebClient)</field>
+  <field name="win.eventdata.scriptBlockText" type="pcre2">(?is)^(?=.*\b(IEX|Invoke-Expression)\b)(?=.*\b(DownloadString|DownloadData|Invoke-WebRequest)\b)</field>
   <description>PowerShell ScriptBlock with IEX + Download pattern: likely staged payload execution</description>
   <mitre>
     <id>T1059.001</id>
@@ -115,6 +115,11 @@ rozłożone na 10 minut ominą okno 60 s. Wydłużenie okna zwiększa jednak lic
 przypadkowych współwystąpień. Właściwym rozwiązaniem jest okno zmienne albo
 punktacja ryzyka per host zamiast twardego progu — kandydat do roadmapy.
 
+Reguła `100213` wisi pod `61605` i pod wbudowaną `92101` (PowerShell + TCP,
+level 0). Wazuh sprawdza `92101` przed naszą regułą, więc bez tego rodzica
+połączenie TCP PowerShella kończyło się na `92101` bez alertu — sprawdzone na
+managerze Wazuh 4.7.5.
+
 Reguła `100213` opiera się na liście prefiksów sieci wewnętrznych wpisanej
 w wyrażenie regularne. Zmiana adresacji wymaga edycji reguły — to dług, który
 w produkcji rozwiązuje się listą CDB zamiast wyrażeniem.
@@ -129,8 +134,13 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100212`, `100213`, `100214` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie ani reguł korelacyjnych (`100299`), które
+wymagają sekwencji zdarzeń. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 

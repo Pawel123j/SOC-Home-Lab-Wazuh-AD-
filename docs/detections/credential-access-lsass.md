@@ -36,9 +36,9 @@ narzędzia.
 
 ```xml
 <rule id="100210" level="14">
-  <if_sid>61609</if_sid>
-  <field name="win.eventdata.targetImage" type="pcre2">(?i)\\\\lsass\.exe$</field>
-  <field name="win.eventdata.grantedAccess" type="pcre2">(?i)0x(1010|1410|1438|143a|1fffff)</field>
+  <if_sid>61612</if_sid>
+  <field name="win.eventdata.targetImage" type="pcre2">(?i)\\lsass\.exe$</field>
+  <field name="win.eventdata.grantedAccess" type="pcre2">(?i)^0x(1010|1410|1438|143a|1fffff)$</field>
   <description>Possible LSASS memory access (Mimikatz-like): $(win.eventdata.sourceImage) accessed lsass.exe with GrantedAccess=$(win.eventdata.grantedAccess)</description>
   <mitre>
     <id>T1003.001</id>
@@ -102,8 +102,12 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100210`, `100211` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 

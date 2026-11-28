@@ -12,9 +12,9 @@ Windows.
 - W bieżącej sesji kontener był `healthy`, a
   `/var/ossec/bin/wazuh-analysisd -t` zwrócił kod `0`. Wystąpił niekrytyczny
   komunikat hosta o limicie deskryptorów plików.
-- Fixtures JSON Sysmon były widziane przez `wazuh-logtest` jako dekoder `json`,
-  nie `windows_eventchannel`. Nie uzyskano fazy 3 ani pozytywnego dopasowania.
-  Weryfikacja detekcji Windows pozostaje niepotwierdzona; zobacz
+- `wazuh-logtest` w 4.7 nie używa dekodera `windows_eventchannel`, więc fixtures
+  Windows przez logtest kończą się błędem. Reguły Windows sprawdza się przez
+  kolejkę analysisd w formacie agenta — sekcja niżej. Stan i ograniczenia:
   [`HUMAN_ACTION_REQUIRED.md`](../../HUMAN_ACTION_REQUIRED.md).
 
 Kontener nie zawiera Windows, agenta, Active Directory, Indexera ani Dashboardu.
@@ -47,6 +47,28 @@ Wszystkie opublikowane porty są ograniczone do `127.0.0.1`. Zmienne API,
 poświadczenia, porty i trwałe wolumeny są zdefiniowane w
 [`docker-compose.yml`](docker-compose.yml). Używaj osobnego projektu Compose,
 jeśli na hoście działa inny Wazuh o stałej nazwie kontenera.
+
+## Test reguł na prawdziwym managerze (EventChannel)
+
+To samo, co job „Prawdziwy Wazuh manager" w CI. Z katalogu głównego:
+
+```bash
+scripts/start_wazuh_test_manager.sh wazuh-fixtures
+python3 scripts/run_wazuh_fixtures.py --container wazuh-fixtures \
+    --transport eventchannel --output /tmp/wazuh-eventchannel.json
+docker rm -f wazuh-fixtures
+```
+
+Skrypt startowy stawia osobny kontener `wazuh/wazuh-manager:4.7.5` bez
+opublikowanych portów i bez hasła API, montuje reguły i włącza w nim
+`<logall_json>`. Runner wysyła każdą fiksturę i jej próbkę neutralną jako
+zdarzenie agenta Windows, potwierdza wpis w `archives.json` z dekoderem
+`windows_eventchannel` i kończy się `FN=0; FP=0; 22 cases` oraz kodem `0`, gdy
+wszystkie reguły jednozdarzeniowe działają. Raport nie zawiera surowych logów.
+
+W środowisku, które nie pozwala na `memlock: -1` (np. kontener w kontenerze),
+`docker compose up` kończy się błędem `error setting rlimit type 8`; skrypt
+startowy nie ustawia tego limitu.
 
 ## Walidacja statyczna repozytorium
 

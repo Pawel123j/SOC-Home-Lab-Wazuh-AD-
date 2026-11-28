@@ -39,9 +39,9 @@ instalatory i administratorów. Warunek (3) to bezpośredni odpowiednik sekcji
 ```xml
 <rule id="100241" level="10">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.image" type="pcre2">(?i)\\\\schtasks\.exe$</field>
+  <field name="win.eventdata.image" type="pcre2">(?i)\\schtasks\.exe$</field>
   <field name="win.eventdata.commandLine" type="pcre2">(?i)/create\b</field>
-  <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd\.exe\s*/c|mshta|rundll32|regsvr32|wmic|bitsadmin|https?://|AppData\\\\Local\\\\Temp|C:\\\\Users\\\\Public|\\\\Windows\\\\Temp\\\\|/ru\s+"?(NT AUTHORITY\\\\)?SYSTEM)</field>
+  <field name="win.eventdata.commandLine" type="pcre2">(?i)(powershell|cmd\.exe\s*/c|mshta|rundll32|regsvr32|wmic|bitsadmin|https?://|AppData\\\\Local\\\\Temp|C:\\\\Users\\\\Public|\\\\Windows\\\\Temp\\\\|/ru\s+(?:\\?")?(NT AUTHORITY\\\\)?SYSTEM)</field>
   <description>Scheduled task persistence: $(win.eventdata.commandLine)</description>
   <mitre>
     <id>T1053.005</id>
@@ -94,8 +94,12 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100241` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 
