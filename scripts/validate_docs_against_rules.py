@@ -8,11 +8,14 @@ z obszaru bezpieczeństwa to kosztowne inaczej niż zwykły błąd w dokumentacj
 opis detekcji, który nie zgadza się z regułą, podważa wiarygodność całego
 zestawu reguł, także tych poprawnych.
 
-Skrypt sprawdza dwie rzeczy:
+Skrypt sprawdza trzy rzeczy:
 
 1. **Zgodność** — każdy poziom alertu i tag MITRE wymieniony w tabelach
    dokumentacji musi odpowiadać definicji reguły w XML-u.
-2. **Brak zmyślonych dowodów** — dokumentacja nie może zawierać wskaźników
+2. **Cytowane reguły** — każdy blok ```xml z `<rule id=...>` w dokumentacji
+   musi być identyczny z tą regułą w XML-u (poza wcięciem). Inaczej czytelnik
+   kopiuje wzorzec, który nie jest tym, co działa na managerze.
+3. **Brak zmyślonych dowodów** — dokumentacja nie może zawierać wskaźników
    TP/FP ani liczników trafień, dopóki nie pochodzą z opisanego przebiegu.
    Laboratorium wymaga trzech maszyn wirtualnych i nie da się go uruchomić
    w CI, więc takie liczby nie mają tu skąd pochodzić.
@@ -24,6 +27,7 @@ from __future__ import annotations
 
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 import defusedxml.ElementTree as ET
@@ -66,10 +70,34 @@ def parse_rules(xml_text: str) -> dict[str, dict]:
     return rules
 
 
-def check_document(path: Path, rules: dict[str, dict]) -> list[str]:
+def _normalized(block: str) -> str:
+    # Indentation, trailing spaces and blank lines (e.g. where a comment was) do not matter.
+    return "\n".join(line.rstrip() for line in textwrap.dedent(block).strip().splitlines() if line.strip())
+
+
+def rule_sources(xml_text: str) -> dict[str, str]:
+    """Return each rule's XML text (comments removed), keyed by id."""
+    without_comments = re.sub(r"<!--.*?-->", "", xml_text, flags=re.S)
+    return {
+        match.group(1): _normalized(match.group(0))
+        for match in re.finditer(r'^[ \t]*<rule id="(\d+)".*?</rule>', without_comments, re.S | re.M)
+    }
+
+
+def check_document(path: Path, rules: dict[str, dict], sources: dict[str, str] | None = None) -> list[str]:
     text = path.read_text(encoding="utf-8")
     name = path.relative_to(ROOT)
     problems: list[str] = []
+
+    # Reguła cytowana w bloku ```xml musi być tą samą regułą, co w XML-u.
+    for block in re.findall(r"```xml\n(.*?)```", text, re.S) if sources else ():
+        for match in re.finditer(r'^[ \t]*<rule id="(\d+)".*?</rule>', block, re.S | re.M):
+            source = sources.get(match.group(1))
+            if source is not None and _normalized(match.group(0)) != source:
+                problems.append(
+                    f"{name}: blok XML reguły {match.group(1)} różni się od "
+                    f"{RULES_XML.relative_to(ROOT)} — skopiuj regułę z XML-a"
+                )
 
     # Reguły cytowane w dokumencie muszą istnieć.
     for rule_id in sorted(set(re.findall(r"\b(" + RULE_ID + r")\b", text))):
@@ -119,7 +147,9 @@ def main() -> int:
         print(f"Brak pliku reguł: {RULES_XML}", file=sys.stderr)
         return 1
 
-    rules = parse_rules(RULES_XML.read_text(encoding="utf-8"))
+    xml_text = RULES_XML.read_text(encoding="utf-8")
+    rules = parse_rules(xml_text)
+    sources = rule_sources(xml_text)
     if not rules:
         print("Nie udało się sparsować żadnej reguły — sprawdź XML.", file=sys.stderr)
         return 1
@@ -135,7 +165,7 @@ def main() -> int:
 
     problems: list[str] = []
     for document in documents:
-        problems.extend(check_document(document, rules))
+        problems.extend(check_document(document, rules, sources))
 
     if problems:
         print(f"Niezgodności dokumentacji z regułami: {len(problems)}", file=sys.stderr)

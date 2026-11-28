@@ -29,7 +29,9 @@ Bramka CI sprawdza ich strukturę, spójność lokalnych łańcuchów i treść 
 |---|---|
 | Reguły Wazuh | poprawność XML, unikalność ID, format ID (1–6 cyfr ASCII, jak w `wazuh-analysisd`), zakres ID własnych, `level`, `description`, mapowanie MITRE, spójność łańcuchów `if_sid` |
 | Reguły Sigma | poprawność YAML i pola wymagane przez specyfikację |
-| Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha |
+| Zdarzenia testowe | poprawny JSON i struktura, której oczekuje dekoder Wazuha (w tym `Level` + `Keywords`) |
+| Prawdziwy Wazuh manager 4.7.5 | każda reguła jednozdarzeniowa strzela na swojej fiksturze i nie strzela na próbce neutralnej, przez dekoder `windows_eventchannel` |
+| Dokumentacja | poziomy i MITRE w tabelach oraz bloki XML reguł zgodne z `custom-wazuh-rules.xml` |
 | Ansible / compose | parsowanie YAML, składnia skryptów powłoki, `docker compose config` |
 
 Lokalnie (Python 3.11+, CI używa 3.12; bez Dockera, VM ani sieci poza PyPI):
@@ -47,10 +49,17 @@ Każda z trzech komend kończy się kodem `0`; pierwsza wypisuje
 `OK — wszystkie sprawdzenia przeszły.` Bez kroku `pip install` walidator
 kończy się błędem `ModuleNotFoundError: No module named 'defusedxml'`.
 
-**Czego CI nie robi:** nie uruchamia Wazuha ani Windows Event Channel, więc nie
-potwierdza, że reguła *strzeli* na prawdziwym zdarzeniu. Fixture JSON sprawdza
-strukturę testową, nie pełny tor dekodera/agenta. Walidacja wymaga managera oraz
-gościa Windows.
+Ten sam test na prawdziwym managerze lokalnie (wymaga Dockera):
+
+```bash
+scripts/start_wazuh_test_manager.sh wazuh-fixtures
+python3 scripts/run_wazuh_fixtures.py --container wazuh-fixtures --transport eventchannel --output /tmp/wazuh-eventchannel.json
+```
+
+**Czego CI nie robi:** nie ma agenta Windows ani Sysmona, więc nie sprawdza
+zbierania zdarzeń z prawdziwego hosta; nie ma AD, Indexera ani Dashboardu i nie
+sprawdza reguł korelacyjnych, które wymagają sekwencji zdarzeń. Szczegóły:
+[`HUMAN_ACTION_REQUIRED.md`](HUMAN_ACTION_REQUIRED.md).
 
 ## Detection catalogue
 
@@ -67,8 +76,10 @@ fix, not presented as working.
 > **On evidence:** no document in this repository reports alert counts or TP/FP
 > rates from an attack run. The lab uses four VMs and cannot run in CI. What CI
 > does verify on every push: rule syntax, unique IDs, `if_sid` chain integrity,
-> MITRE tag validity, and that the alert levels quoted in the documentation match
-> the rule definitions.
+> MITRE tag validity, that the alert levels and rule snippets quoted in the
+> documentation match the rule definitions, and that each of the 11 single-event
+> rules fires on its synthetic event — and stays silent on a neutral one — in a
+> real Wazuh 4.7.5 manager, through the Windows EventChannel decoder.
 
 ## Project Purpose
 

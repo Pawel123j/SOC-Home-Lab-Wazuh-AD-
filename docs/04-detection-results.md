@@ -19,12 +19,21 @@ definicji reguł w [`detection-rules/custom-wazuh-rules.xml`](../detection-rules
 > Co **jest** zweryfikowane automatycznie: składnia reguł, unikalność
 > identyfikatorów, poprawność tagów MITRE i zgodność reguł Sigma —
 > workflow `Walidacja detekcji` uruchamiany przy każdym pushu.
+>
+> Ten sam workflow (job „Prawdziwy Wazuh manager") uruchamia **Wazuh manager
+> 4.7.5** z tymi regułami i wysyła do niego syntetyczne zdarzenia w formacie
+> agenta Windows (dekoder `windows_eventchannel`, wbudowany łańcuch reguł
+> Sysmon/PowerShell). Każda z 11 reguł jednozdarzeniowych musi wystrzelić na
+> swojej fiksturze i nie wystrzelić na próbce neutralnej. To dowód działania
+> reguły na prawdziwym silniku, ale **nie** przebieg ataku: nie ma agenta,
+> Sysmona, AD ani reguł korelacyjnych — patrz
+> [HUMAN_ACTION_REQUIRED.md](../HUMAN_ACTION_REQUIRED.md).
 
 ---
 
 ## Konwencja oznaczeń
 
-- **Poziom alertu (level):** skala Wazuh 0–15. W praktyce SOC: < 7 ignorujemy,
+- **Poziom alertu (level):** skala Wazuh 0–16. W praktyce SOC: < 7 ignorujemy,
   7–9 interesujące, 10–12 triage, 13–15 natychmiastowa eskalacja.
 - **Rule ID:** `100xxx` to reguły własne z tego repozytorium; `< 10000` to
   wbudowane reguły Wazuha, na których się opieramy przez `if_sid`.
@@ -91,9 +100,10 @@ Szuka **zachowania**, którego nie da się uniknąć, jeśli celem jest odczyt p
 LSASS. To różnica między detekcją opartą na sygnaturze a detekcją opartą na
 technice — i powód, dla którego reguła przetrwa zmianę narzędzia.
 
-Warunek `if_sid 61609` oznacza, że reguła nadbudowuje wbudowaną regułę Wazuha
+Warunek `if_sid 61612` oznacza, że reguła nadbudowuje wbudowaną regułę Wazuha
 dla Sysmon EID 10 — bez Sysmona ta detekcja nie istnieje, sam dziennik
-Security Windows nie daje wglądu w `ProcessAccess`.
+Security Windows nie daje wglądu w `ProcessAccess`. (Wcześniej reguła wskazywała
+`61609`, czyli EID 7 `ImageLoad`, i na prawdziwym managerze nie strzelała.)
 
 ### False positives, których się spodziewam
 

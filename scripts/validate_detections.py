@@ -212,6 +212,14 @@ def check_test_events() -> None:
         if not str(system.get("channel", "")).strip():
             fail(f"{rel}: brak 'win.system.channel'")
 
+        # Wazuh wyznacza win.system.severityValue tylko z pary Level + Keywords,
+        # a reguły bazowe (np. 61600 dla Sysmona) wymagają severityValue.
+        # Bez tych pól żadna reguła Windows nie zadziała na prawdziwym managerze.
+        for key in ("level", "keywords"):
+            if not str(system.get(key, "")).strip():
+                fail(f"{rel}: brak 'win.system.{key}' — bez Level i Keywords Wazuh nie "
+                     "wyznaczy severityValue i reguły Windows nie zadziałają")
+
     print(f"  Zdarzenia: {len(files)} plików JSON")
 
 

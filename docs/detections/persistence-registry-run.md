@@ -9,6 +9,13 @@ do klucza `Run` albo `RunOnce` w rejestrze.
 
 Sysmon EID 13 (`RegistryEvent — value set`), reguła wbudowana `61615`.
 
+Każda zmiana klucza `Run` trafia w Wazuh 4.7 najpierw do wbudowanej reguły
+`92300` (level 0, „Added registry content to be executed on next logon"),
+a zapis przez `reg.exe` dalej do `92302`. Wazuh sprawdza te wbudowane reguły
+przed naszą, więc `100240` jako dziecko `61615` nigdy by nie strzeliła —
+dlatego wisi pod `92300` i `92302`. Separatory ścieżki we wzorcu to `\\\\`,
+bo Wazuh przechowuje każdy `\` z wartości rejestru podwojony.
+
 ## Logika detekcji
 
 Dopasowanie ścieżki klucza do `...\Microsoft\Windows\CurrentVersion\Run(Once)\`,
@@ -20,7 +27,7 @@ niezauważona na maszynach 64-bitowych.
 
 ```xml
 <rule id="100240" level="9">
-  <if_sid>61615</if_sid>
+  <if_sid>92300, 92302</if_sid>
   <field name="win.eventdata.targetObject" type="pcre2">(?i)\\\\Software\\\\(Wow6432Node\\\\)?Microsoft\\\\Windows\\\\CurrentVersion\\\\Run(Once)?\\\\</field>
   <description>Registry persistence: new value in Run key: $(win.eventdata.targetObject) = $(win.eventdata.details)</description>
   <mitre>
@@ -67,8 +74,12 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100240` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 

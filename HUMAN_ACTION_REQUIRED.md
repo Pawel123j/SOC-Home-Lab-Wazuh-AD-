@@ -1,19 +1,40 @@
 # Pozostałe walidacje SOC Home Lab
 
-## Stan na 2 listopada 2026
+## Stan na 28 listopada 2026
 
 Walidacja statyczna reguł XML, Sigma, fixtures i dokumentacji przechodzi.
-Uruchomiony manager Wazuh 4.7.5 zwrócił kod `0` dla
-`/var/ossec/bin/wazuh-analysisd -t`, czyli przyjął konfigurację. W tym
-kontenerze pojawił się też komunikat o ograniczeniu limitu deskryptorów przez
-hosta; nie zmienił kodu wyjścia.
 
-Test `wazuh-logtest` **nie potwierdził** reguł Sysmon z fixtures. Narzędzie
-przetworzyło ich JSON dekoderem `json`, a nie `windows_eventchannel`, który jest
-przodkiem reguł 100210–100214 i pozostałych reguł Sysmon. Nie pojawiła się faza
-3 ani wynik dopasowania. Wcześniejsza instrukcja, że samo wklejenie fixtures do
-kontenera potwierdza detekcję, była błędna i została wycofana z dokumentacji.
-Nie raportuj wyników FP/FN z tych fixtures jako potwierdzenia detekcji.
+**Reguły zostały sprawdzone na prawdziwym managerze Wazuh 4.7.5.** Workflow CI
+(job „Prawdziwy Wazuh manager") i lokalnie
+`scripts/start_wazuh_test_manager.sh` stawiają izolowany kontener z tymi
+regułami, a `scripts/run_wazuh_fixtures.py --transport eventchannel` wysyła do
+niego każdą fiksturę i jej próbkę neutralną w formacie agenta Windows. Zdarzenie
+przechodzi przez prawdziwy dekoder `windows_eventchannel` i wbudowany łańcuch
+reguł Sysmon/PowerShell; każde musi mieć wpis w `archives.json`. Wynik: wszystkie
+11 reguł jednozdarzeniowych strzela na swojej fiksturze i żadna nie strzela na
+próbce neutralnej.
+
+Co ten test wykazał i co poprawiono (przed poprawką 4 z 11 reguł nie strzelało):
+
+- `wazuh-logtest` w 4.7 **nigdy** nie używa dekodera EventChannel (zawsze buduje
+  komunikat `1:<location>:<log>`), dlatego wcześniej fixtures były widziane jako
+  `json`. To ograniczenie narzędzia, nie fixtures.
+- `100210` wskazywała `if_sid 61609` (Sysmon EID 7); EID 10 to `61612`.
+- `100213` i `100240` były przesłaniane przez wbudowane reguły `92101` i
+  `92300`/`92302`, które Wazuh sprawdza przed naszymi; teraz wiszą także pod nimi.
+- Wazuh przechowuje w `win.eventdata.*` każdy `\` podwojony, `"` jako `\"`,
+  a `&<>` jako encje XML. Wzorce `100232`, `100240`, `100241`, `100220` i `100250`
+  zakładały pojedyncze `\` i zwykły `"`; poprawione, a testy PCRE2 używają tego
+  samego modelu (`wazuh_decoded`).
+- Reguła bazowa `61600` wymaga `severityValue`, które Wazuh wylicza tylko z pary
+  `Level` + `Keywords`; fixtures Sysmona ich nie miały. Walidator to teraz sprawdza.
+
+Czego ten test **nie** pokrywa: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie, Active Directory, Indexera/Dashboardu oraz reguł
+korelacyjnych (`100110`, `100111`, `100120`, `100230`, `100231`, `100297`,
+`100299`), które wymagają sekwencji zdarzeń. Archiwum tworzone przez PowerShell
+trafia do wbudowanej `92212` zamiast `100232` (patrz
+[data-exfiltration-http.md](docs/detections/data-exfiltration-http.md)).
 
 ## Wymagany test z prawdziwym kanałem Windows Event Channel
 

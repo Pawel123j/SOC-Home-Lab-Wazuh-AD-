@@ -6,9 +6,11 @@ name: Walidacja detekcji
 # łańcuch if_sid, zduplikowane ID albo syntetyczne zdarzenie, na którym żadna
 # reguła nie ma szans strzelić.
 #
-# Czego ta bramka NIE robi: nie uruchamia Wazuha, więc nie potwierdza, że
-# reguła faktycznie strzeli. Do tego służy kontener z managerem
-# (infrastructure/docker/) — patrz HUMAN_ACTION_REQUIRED.md.
+# Job "wazuh-manager" uruchamia prawdziwy Wazuh manager 4.7.5 z naszymi
+# regułami i podaje fixtures przez dekoder windows_eventchannel, więc
+# sprawdza, że reguła faktycznie strzeli na zdarzeniu, a próbka neutralna nie.
+# Czego ta bramka NIE robi: nie ma agenta Windows, Sysmona, AD, Indexera ani
+# Dashboardu i nie sprawdza reguł korelacyjnych — patrz HUMAN_ACTION_REQUIRED.md.
 
 on:
   push:
@@ -125,10 +127,39 @@ jobs:
           persist-credentials: false
 
       # Harness z Wazuh managerem jest lekką alternatywą dla pełnego labu na
-      # VM-ach. Sprawdzamy, że plik compose jest poprawny — postawienie samego
-      # managera i odpalenie 9 zdarzeń opisuje HUMAN_ACTION_REQUIRED.md.
+      # VM-ach. Tu sprawdzamy, że plik compose jest poprawny; sam manager
+      # z fixtures uruchamia job "wazuh-manager".
       - name: docker compose config
         working-directory: infrastructure/docker
         run: docker compose config -q
         env:
           WAZUH_API_PASSWORD: ci-config-validation-only-not-a-runtime-password
+
+  wazuh-manager:
+    name: Prawdziwy Wazuh manager (EventChannel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # Izolowany kontener: bez opublikowanych portów, bez hasła API, bez agentów.
+      - name: Manager Wazuh 4.7.5 z regułami repozytorium
+        run: scripts/start_wazuh_test_manager.sh wazuh-fixtures
+
+      # Każde zdarzenie musi mieć wpis w archives.json z dekoderem
+      # windows_eventchannel; brak wpisu jest błędem, nie wynikiem.
+      - name: Fixtures pozytywne i neutralne przez dekoder windows_eventchannel
+        run: >-
+          python3 scripts/run_wazuh_fixtures.py --container wazuh-fixtures
+          --transport eventchannel --timeout 90
+          --output "$RUNNER_TEMP/wazuh-eventchannel.json"
+
+      - name: Usunięcie managera
+        if: always()
+        run: docker rm -f wazuh-fixtures

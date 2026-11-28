@@ -29,8 +29,8 @@ omijania kontroli aplikacji.
 ```xml
 <rule id="100220" level="12">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.image" type="pcre2">(?i)\\\\mshta\.exe$</field>
-  <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?\s+(https?:|//|ftp:)</field>
+  <field name="win.eventdata.image" type="pcre2">(?i)\\mshta\.exe$</field>
+  <field name="win.eventdata.commandLine" type="pcre2">(?i)mshta(\.exe)?(?:\\?")?\s+(?:\\?")?(https?:|//|ftp:)</field>
   <description>mshta.exe executing remote HTA file: $(win.eventdata.commandLine)</description>
   <mitre>
     <id>T1218.005</id>
@@ -40,8 +40,8 @@ omijania kontroli aplikacji.
 
 <rule id="100221" level="13">
   <if_sid>61603</if_sid>
-  <field name="win.eventdata.parentImage" type="pcre2">(?i)\\\\mshta\.exe$</field>
-  <field name="win.eventdata.image" type="pcre2">(?i)\\\\(powershell(_ise)?|cmd|wscript|cscript)\.exe$</field>
+  <field name="win.eventdata.parentImage" type="pcre2">(?i)\\mshta\.exe$</field>
+  <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell(_ise)?|cmd|wscript|cscript)\.exe$</field>
   <description>mshta.exe spawned script interpreter $(win.eventdata.image): classic LOLBAS chain</description>
   <mitre>
     <id>T1218.005</id>
@@ -90,8 +90,12 @@ Co jest sprawdzane automatycznie przy każdym pushu
 - poprawność tagów MITRE,
 - zgodność poziomów alertów w tej dokumentacji z definicjami reguł.
 
-Czego **nie** sprawdza CI: czy reguła faktycznie wystrzeli na prawdziwym
-zdarzeniu. To wymaga działającego managera Wazuh — procedura w
+Na prawdziwym managerze Wazuh 4.7.5 (job „Prawdziwy Wazuh manager" w CI,
+`scripts/run_wazuh_fixtures.py --transport eventchannel`) sprawdzane jest, że
+`100220`, `100221` strzela na syntetycznej fiksturze, a nie strzela na próbce neutralnej.
+
+Czego **nie** sprawdza CI: zbierania zdarzenia przez agenta i Sysmona na
+prawdziwym Windowsie. Procedura w
 [04-detection-results.md](../04-detection-results.md), sekcja „Jak zmierzyć
 to u siebie".
 
